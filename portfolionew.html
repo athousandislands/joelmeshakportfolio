@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title>Joel Meshak</title>
 
-    <!-- Single Three.js build (ESM). The r128 UMD build has been removed:
-         Scene 2 no longer uses WebGL at all. -->
     <script type="importmap">
         {
             "imports": {
@@ -24,8 +22,10 @@
            --------------------------------------------------------------------------
            --vh is written by the Viewport module from the SAME height value the
            renderers are sized to. CSS and WebGL therefore agree by construction.
-           `svh` is no longer used anywhere: it was the source of the fixed vertical
-           gap between the canvas (sized in innerHeight px) and its container.
+
+           PHASE 3: --vh/--vw are now updated on EVERY viewport read (including the
+           small height changes caused by the mobile URL bar), but the expensive
+           WebGL relayout is only notified for MEANINGFUL changes. See Viewport.
            ========================================================================== */
         :root {
             --vh: 1vh;
@@ -63,6 +63,36 @@
             opacity: 0;
             pointer-events: none;
             z-index: 50;
+        }
+
+        /* Context-loss fallback. Shown only if a lost context fails to restore
+           within RECOVERY_GRACE_MS, so the user never sits in front of a silent
+           black canvas with no way forward. */
+        #gl-recovery {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 18px;
+            background: #CCCCCC;
+            color: #777777;
+            font-size: 15px;
+            text-align: center;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+        html.gl-unrecoverable #gl-recovery { display: flex; }
+        #gl-recovery button {
+            font: inherit;
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50px;
+            padding: 10px 26px;
+            cursor: pointer;
         }
 
         /* ==========================================================================
@@ -322,12 +352,14 @@
         }
         #native-scroll-container::-webkit-scrollbar { display: none; }
         /* The grid lives INSIDE this element, so the compositor scrolls the
-           cards natively. No JS runs during a grid scroll. */
+           cards natively. No JS runs during a grid scroll, and (Phase 3) no
+           non-passive listener sits between the touch and the scroller. */
         #native-scroll-content { width: 100%; position: relative; }
 
         #click-blocker {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             z-index: 100; display: none;
+            touch-action: none;
         }
         #click-blocker.active { display: block; }
 
@@ -362,9 +394,12 @@
 
         /* Cards are NOT permanently promoted. A permanent `will-change:
            transform` makes the browser rasterize the layer once at its layout
-           size and then GPU-magnify it for any later scale() — which is what
-           made carousel images soft. Promotion is now applied only while a
-           card is actually animating, via .animating. */
+           size and then GPU-magnify it for any later scale().
+
+           PHASE 3: `.animating` is now applied ONLY to the cards of the cluster
+           actually being opened — not to every card in every cluster. The other
+           clusters are faded as a single composited group via #native-scroll-content,
+           which is one layer instead of ~30. */
         .dom-card {
             position: absolute; top: 0; left: 0; transform-origin: center center;
             display: flex; align-items: center; justify-content: center; overflow: hidden;
@@ -373,10 +408,13 @@
         .dom-card.animating {
             will-change: transform, opacity;
         }
+
         .dom-card img, .dom-card video {
             width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none;
             transition: box-shadow 0.4s ease;
         }
+
+        #native-scroll-content.fading { will-change: opacity; }
 
         .cluster-title {
             position: absolute; top: 0; left: 0; transform-origin: center center;
@@ -583,10 +621,17 @@
         <div id="mindmap-canvas-container"></div>
     </div>
 
+    <!-- Context-loss fallback (FIX 14b) -->
+    <div id="gl-recovery">
+        <div>Graphics stopped responding.</div>
+        <button type="button" onclick="location.reload()">Reload</button>
+    </div>
+
 <script type="module">
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 
 /* ==========================================================================
    0. SMALL MATH HELPERS
@@ -611,29 +656,99 @@ const LOW_POWER = (() => {
 })();
 
 /* ==========================================================================
+   0b. IDLE SCHEDULER  (FIX 8)
+   --------------------------------------------------------------------------
+   The old code was:
+
+       const requestIdle = window.requestIdleCallback || (cb => setTimeout(cb, 1));
+
+   On Safari — i.e. most of the mobile traffic — requestIdleCallback did not
+   exist, so every "idle" job actually ran on a 1ms timeout: the opposite of
+   idle. Background image decoding therefore competed directly with rendering,
+   which is a large part of the "stutters after load with no interaction"
+   report.
+
+   This replacement genuinely yields. It piggybacks on the render loop's own
+   frame timing: work only runs when the previous frame came in under budget,
+   and each idle callback gets a hard deadline it can check.
+   ========================================================================== */
+const Idle = (() => {
+    const queue = [];
+    let lastFrameMs = 16;
+    let scheduled = false;
+    const BUDGET_MS = 6;
+
+    function pump() {
+        scheduled = false;
+        if (!queue.length) return;
+
+        /* If the app is struggling, do nothing this frame. */
+        if (lastFrameMs > 20) { schedule(); return; }
+
+        const start = performance.now();
+        const deadline = {
+            timeRemaining: () => Math.max(0, BUDGET_MS - (performance.now() - start)),
+            didTimeout: false
+        };
+        while (queue.length && deadline.timeRemaining() > 0.5) {
+            const job = queue.shift();
+            try { job(deadline); } catch (e) { console.error('[idle]', e); }
+        }
+        if (queue.length) schedule();
+    }
+
+    function schedule() {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => setTimeout(pump, 0));
+    }
+
+    return {
+        run(fn) { queue.push(fn); schedule(); },
+        note(frameMs) { lastFrameMs = frameMs; },
+        get pending() { return queue.length; }
+    };
+})();
+
+/* Back-compat shim for the few call sites that just want "later, politely". */
+const requestIdle = (cb) => Idle.run(cb);
+
+/* ==========================================================================
    1. VIEWPORT — THE SINGLE SOURCE OF TRUTH
    --------------------------------------------------------------------------
    This is the ONLY place in the application that reads window.innerWidth,
-   window.innerHeight or window.visualViewport. Everything downstream — CSS
-   custom properties, renderer sizes, camera fits, layout mode, breakpoints —
-   is derived from these values.
+   window.innerHeight or window.visualViewport.
 
-   Changes are coalesced into a single rAF-batched notification so that no
-   subscriber ever sees a half-updated viewport, and so CSS and WebGL are
-   never sized from two different height values.
+   FIX 13: the mobile URL bar collapsing changes visualViewport.height by
+   50-120px mid-scroll. Previously EVERY such change triggered layoutScene1()
+   -> renderer.setSize() -> framebuffer + transmission-target reallocation,
+   producing a guaranteed stutter on the first swipe of every session.
+
+   Now there are two tiers:
+     - CSS custom properties (--vh/--vw) update on every read, so layout that
+       depends on them stays exact and cheap.
+     - Heavy subscribers (renderer resize, camera fits, grid relayout) are
+       only notified when the change is MEANINGFUL: any width change, a dpr
+       change, an orientation flip, or a height change larger than
+       URL_BAR_TOLERANCE.
    ========================================================================== */
+const URL_BAR_TOLERANCE = 130;   // px — larger than any mobile browser chrome
+
 const Viewport = (() => {
     const subscribers = new Set();
     let pending = false;
+
+    /* The height the heavy subscribers were last sized to. Distinct from
+       state.height, which tracks the live value for CSS. */
+    let committedHeight = 0;
+    let committedWidth = 0;
+    let committedDpr = 0;
 
     const state = {
         width: 0,
         height: 0,
         dpr: 1,
         aspect: 1,
-        /* t = 0 for a tall portrait phone, 1 for a wide landscape desktop.
-           Every former mobile/desktop branch is now a mix() on this value,
-           which is why there are no discontinuities at a breakpoint. */
         t: 0,
         columns: 3,
         compact: false,
@@ -642,44 +757,47 @@ const Viewport = (() => {
 
     function read() {
         const vv = window.visualViewport;
-        /* visualViewport excludes browser chrome and is stable across the
-           iOS address-bar collapse, which innerHeight is not. */
         const w = Math.round(vv ? vv.width : window.innerWidth);
         const h = Math.round(vv ? vv.height : window.innerHeight);
         return { w, h };
     }
 
-    /* Column count is derived from how many cards actually fit, not from a
-       magic 768. MIN_CARD_PX is the smallest width at which a card is still
-       worth looking at; GAP_FACTOR accounts for the gutter between them. */
     const MIN_CARD_PX = 260;
     const GAP_FACTOR = 1.30;
 
+    /* Returns true when the change is big enough to warrant a full relayout. */
     function recompute() {
         const { w, h } = read();
-        const changed = (w !== state.width || h !== state.height || window.devicePixelRatio !== state.dpr);
-        if (!changed) return false;
+        const dpr = window.devicePixelRatio || 1;
+
+        const anyChange = (w !== state.width || h !== state.height || dpr !== state.dpr);
+        if (!anyChange) return false;
 
         state.width = w;
         state.height = h;
-        state.dpr = window.devicePixelRatio || 1;
+        state.dpr = dpr;
         state.aspect = w / h;
         state.orientation = w >= h ? 'landscape' : 'portrait';
-
-        /* Continuous portrait→landscape blend. 0.50 and 1.40 are the aspect
-           ratios of a tall phone and a typical laptop; between them every
-           dependent value interpolates smoothly. */
         state.t = clamp((state.aspect - 0.50) / (1.40 - 0.50), 0, 1);
-
         state.columns = clamp(Math.floor(w / (MIN_CARD_PX * GAP_FACTOR)), 1, 3);
         state.compact = state.columns === 1;
 
-        /* CSS reads the SAME numbers the renderers are sized to. */
+        /* CSS always tracks the live viewport. This is cheap. */
         const root = document.documentElement;
         root.style.setProperty('--vh', (h / 100) + 'px');
         root.style.setProperty('--vw', (w / 100) + 'px');
         root.classList.toggle('compact', state.compact);
 
+        const widthChanged = w !== committedWidth;
+        const dprChanged = dpr !== committedDpr;
+        const heightDelta = Math.abs(h - committedHeight);
+        const meaningful = widthChanged || dprChanged || heightDelta > URL_BAR_TOLERANCE;
+
+        if (!meaningful) return false;
+
+        committedWidth = w;
+        committedHeight = h;
+        committedDpr = dpr;
         return true;
     }
 
@@ -712,120 +830,203 @@ const Viewport = (() => {
         get compact() { return state.compact; },
         get dpr() { return state.dpr; },
         onChange(fn) { subscribers.add(fn); return () => subscribers.delete(fn); },
-        refresh: schedule
+        refresh: schedule,
+        /* Escape hatch: forces the next recompute to be treated as meaningful.
+           Used when a scene mounts and must be sized exactly. */
+        invalidate() { committedHeight = -99999; }
     };
 })();
 
 const V = Viewport;
 
-/* Render pixel ratio: capped, and capped harder on low-power devices. */
 /* ==========================================================================
-   1b. ADAPTIVE PIXEL RATIO GOVERNOR
+   1b. PIXEL RATIO  (FIX 2 + the flat 1.5 cap)
    --------------------------------------------------------------------------
-   Phase 1 used one global ceiling and dropped mobile to 1.25, which was a
-   quality regression made on a guess. Ceilings are now per scene, because the
-   scenes have completely different profiles:
+   ONE ceiling for the whole app. Previously scene 3 was allowed 2.0 on the
+   grounds that its fill cost is trivial — but with antialias:true a DPR of 2
+   means a 4x-MSAA buffer at 4x the pixels of DPR 1, i.e. roughly 8x the
+   framebuffer bytes, in the scene that is already the memory hotspot. 1.5 is
+   still 2.25x the pixel count of DPR 1 and is visually indistinguishable for
+   this content at phone viewing distance.
 
-     Scene 1  fill-rate bound. 3060 transparent point sprites with depthWrite
-              off (heavy overdraw) plus MeshPhysicalMaterial transmission,
-              which makes three.js re-render the scene into a transmission
-              target every frame. Cost scales with DPR^2. Ceiling 1.5.
-     Scene 2  no canvas at all since Phase 1. Not applicable.
-     Scene 3  76 unlit textured quads. Trivial fill cost; its constraint is
-              texture memory, not resolution. Ceiling 2.0.
+   THE GOVERNOR WAS THE STARTUP STUTTER. three.js's setPixelRatio() internally
+   calls setSize(), which reallocates the drawing buffer, the MSAA buffers and
+   the transmission render target. The old governor started judging at ~0.7s,
+   evaluated every 1s, and could both drop AND raise quality — so during the
+   naturally-slow boot window it fired repeatedly, each time causing exactly
+   the stutter it was trying to prevent.
 
-   A runtime governor then scales both ceilings by a shared quality factor
-   measured from real frame times, so weak hardware degrades gracefully
-   instead of everyone paying for the worst device.
+   Changes:
+     - GRACE_S: no sampling at all for the first 4 seconds.
+     - Requires 3 consecutive bad windows before dropping (not 1).
+     - Never raises quality back up automatically. One decision, downward only.
+     - Only applies to the renderer of the CURRENTLY VISIBLE scene. The hidden
+       renderer is marked dirty and updated when its scene is entered.
    ========================================================================== */
-const DPR_CEILING = { scene1: 1.5, scene3: 2.0 };
+const DPR_CAP = 1.5;
+const GOVERNOR_GRACE_S = 4.0;
 
 const Governor = (() => {
-    const consumers = [];          // { key, apply(ratio) }
+    const consumers = new Map();   // key -> { apply, scene, dirty }
     const samples = new Float32Array(60);
     let n = 0, filled = false;
-    let quality = 1.0;             // 0.6 .. 1.0
+    let quality = 1.0;             // 0.6 .. 1.0, monotonically non-increasing
     let lastChange = -Infinity;
-    let goodStreak = 0;
+    let badStreak = 0;
 
-    function ratioFor(key) {
-        const ceiling = DPR_CEILING[key] || 1.5;
-        return clamp(Math.min(V.dpr, ceiling) * quality, 1.0, ceiling);
+    function ratioFor() {
+        return clamp(Math.min(V.dpr, DPR_CAP) * quality, 1.0, DPR_CAP);
     }
 
-    function applyAll() {
-        consumers.forEach(c => c.apply(ratioFor(c.key)));
+    function applyActive() {
+        const r = ratioFor();
+        consumers.forEach((c) => {
+            if (c.scene === Router.scene) { c.dirty = false; c.apply(r); }
+            else c.dirty = true;
+        });
     }
 
     function p95() {
         const len = filled ? samples.length : n;
-        if (len < 20) return 0;
+        if (len < 40) return 0;
         const copy = Array.prototype.slice.call(samples, 0, len).sort((a, b) => a - b);
         return copy[Math.floor(len * 0.95)];
     }
 
     return {
-        register(key, apply) {
-            consumers.push({ key, apply });
-            apply(ratioFor(key));
+        register(key, scene, apply) {
+            consumers.set(key, { apply, scene, dirty: false });
+            apply(ratioFor());
+        },
+        unregister(key) { consumers.delete(key); },
+        /* Called when a scene becomes visible, so a renderer that was skipped
+           while hidden picks up the current quality without a mid-scene resize. */
+        refresh(key) {
+            const c = consumers.get(key);
+            if (c && c.dirty) { c.dirty = false; c.apply(ratioFor()); }
         },
         ratioFor,
         sample(dt, time) {
+            /* FIX 2: the boot window is slow by nature (PMREM, shader compile,
+               first image decodes). Judging it produces false positives. */
+            if (time < GOVERNOR_GRACE_S) return;
+
             samples[n++] = dt * 1000;
             if (n >= samples.length) { n = 0; filled = true; }
-            if (!filled && n < 40) return;
-            if (time - lastChange < 1.0) return;   // setSize reallocates the
-                                                   // framebuffer; thrashing it
-                                                   // is worse than a low DPR
+            if (time - lastChange < 2.0) return;
+
             const worst = p95();
             if (worst === 0) return;
 
-            if (worst > 20 && quality > 0.6) {
-                quality = Math.max(0.6, quality - 0.15);
-                goodStreak = 0;
-                lastChange = time;
-                applyAll();
-            } else if (worst < 11) {
-                goodStreak += 1;
-                if (goodStreak >= 3 && quality < 1.0) {
-                    quality = Math.min(1.0, quality + 0.15);
+            if (worst > 22) {
+                badStreak += 1;
+                if (badStreak >= 3 && quality > 0.6) {
+                    quality = Math.max(0.6, quality - 0.15);
                     lastChange = time;
-                    applyAll();
+                    badStreak = 0;
+                    console.info('[governor] quality ->', quality.toFixed(2), 'p95', worst.toFixed(1) + 'ms');
+                    applyActive();
                 }
             } else {
-                goodStreak = 0;
+                badStreak = 0;
             }
         },
-        refresh: applyAll,
         get quality() { return quality; }
     };
 })();
 
-/* Attach loss/restore handling to any renderer. Without this, when the OS
-   reclaims the GPU context three.js silently stops drawing and the page
-   appears frozen until a manual reload. */
-function guardContext(renderer, label, onRestore) {
+/* ==========================================================================
+   1c. CONTEXT LOSS GUARD  (FIX: intentional disposal is not a crash)
+   --------------------------------------------------------------------------
+   preventDefault() on webglcontextlost is required or restore never fires, and
+   a real unrecoverable loss must still surface the reload affordance.
+
+   THE REGRESSION THIS FIXES: Scene3.unmount() deliberately calls
+   loseContext() to make the driver reclaim the mind map's framebuffer
+   immediately. That fired this handler, which had no idea the loss was
+   intentional, started its 5s recovery timer, and — because the canvas was
+   already detached and the renderer disposed — could never receive
+   webglcontextrestored. Five seconds later the "Graphics stopped responding"
+   overlay appeared over whatever scene the user had since navigated to,
+   which is why it looked like opening a glass folder had crashed the page.
+
+   Now:
+     - markDisposing() is set before any intentional teardown; the handler
+       returns immediately when it is set.
+     - destroy() removes the listeners and clears any pending timer, so an
+       unmounted renderer cannot raise an alarm at all.
+     - Recovery state is tracked PER RENDERER and the overlay is only shown
+       when the failing renderer belongs to the scene the user is actually
+       looking at. A mind-map failure can no longer paint over scene 1.
+   ========================================================================== */
+const RECOVERY_GRACE_MS = 5000;
+const lostContexts = new Set();     // labels currently in a lost state
+const failedContexts = new Map();   // label -> scene, for unrecoverable losses
+
+function syncRecoveryUI() {
+    const root = document.documentElement;
+    root.classList.toggle('gl-lost', lostContexts.size > 0);
+
+    let showOverlay = false;
+    failedContexts.forEach((scene) => { if (scene === Router.scene) showOverlay = true; });
+    root.classList.toggle('gl-unrecoverable', showOverlay);
+}
+
+function guardContext(renderer, label, scene, onRestore) {
     const canvas = renderer.domElement;
-    canvas.addEventListener('webglcontextlost', (e) => {
-        e.preventDefault();                 // required, or restore never fires
+    let timer = null;
+    let disposing = false;
+
+    const onLost = (e) => {
+        /* Intentional teardown — not an error, not a user-visible event. */
+        if (disposing) return;
+
+        e.preventDefault();
         console.warn(`[${label}] WebGL context lost; awaiting restore.`);
-        document.documentElement.classList.add('gl-lost');
-    }, false);
-    canvas.addEventListener('webglcontextrestored', () => {
+        lostContexts.add(label);
+        syncRecoveryUI();
+
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            if (disposing) return;
+            console.error(`[${label}] context did not restore within ${RECOVERY_GRACE_MS}ms.`);
+            failedContexts.set(label, scene);
+            syncRecoveryUI();
+        }, RECOVERY_GRACE_MS);
+    };
+
+    const onRestored = () => {
+        if (disposing) return;
         console.warn(`[${label}] WebGL context restored.`);
-        document.documentElement.classList.remove('gl-lost');
-        renderer.setPixelRatio(Governor.ratioFor(label));
+        clearTimeout(timer);
+        lostContexts.delete(label);
+        failedContexts.delete(label);
+        syncRecoveryUI();
+        renderer.setPixelRatio(Governor.ratioFor());
         renderer.setSize(V.width, V.height, false);
         if (onRestore) onRestore();
-    }, false);
+    };
+
+    canvas.addEventListener('webglcontextlost', onLost, false);
+    canvas.addEventListener('webglcontextrestored', onRestored, false);
+
+    return {
+        /* Call BEFORE any deliberate loseContext()/dispose(). */
+        markDisposing() { disposing = true; },
+        destroy() {
+            disposing = true;
+            clearTimeout(timer);
+            canvas.removeEventListener('webglcontextlost', onLost, false);
+            canvas.removeEventListener('webglcontextrestored', onRestored, false);
+            lostContexts.delete(label);
+            failedContexts.delete(label);
+            syncRecoveryUI();
+        }
+    };
 }
 
 /* ==========================================================================
    2. FIT — ONE FUNCTION, USED BY EVERY SCENE
-   --------------------------------------------------------------------------
-   Given a rectangle in design space and a perspective FOV, return the camera
-   distance at which that rectangle fits the viewport with proportional
-   padding. Padding is a ratio, never a world constant.
    ========================================================================== */
 function fitDistance(designW, designH, fovDeg, padRatio) {
     const halfTan = Math.tan(fovDeg * Math.PI / 360);
@@ -841,7 +1042,7 @@ function visibleSizeAt(distance, fovDeg) {
 }
 
 /* ==========================================================================
-   3. SCHEDULER — ONE rAF LOOP FOR THE whole APP
+   3. SCHEDULER — ONE rAF LOOP FOR THE WHOLE APP
    ========================================================================== */
 const Router = {
     scene: 1,
@@ -854,11 +1055,16 @@ const Loop = (() => {
     const handlers = { 1: null, 2: null, 3: null };
 
     function tick() {
+        /* rAF is scheduled FIRST so a throwing handler cannot kill the loop. */
         requestAnimationFrame(tick);
         const dt = Math.min(clock.getDelta(), 0.1);
         time += dt;
+        Idle.note(dt * 1000);
         const h = handlers[Router.scene];
-        if (h) h(dt, time);
+        if (h) {
+            try { h(dt, time); }
+            catch (e) { console.error('[loop] scene', Router.scene, e); }
+        }
         Governor.sample(dt, time);
     }
 
@@ -871,11 +1077,6 @@ const Loop = (() => {
 
 /* ==========================================================================
    4. PROJECT DATA
-   --------------------------------------------------------------------------
-   `cardScale` replaces the old scaleMultiplier / desktopScaleMultiplier pair.
-   One number per project expressing genuine design intent (posters and
-   artwork read denser, so they get more room). The 0.96 desktop fudge factor
-   is gone — it existed to compensate for scale being applied twice.
    ========================================================================== */
 const allProjectsData = [
     {
@@ -1036,45 +1237,26 @@ function buildMediaData(project) {
 }
 
 /* ==========================================================================
-   5. MEDIA DIMENSION REGISTRY
-   --------------------------------------------------------------------------
-   Aspect ratios are resolved BEFORE layout. Anything still unresolved falls
-   back to the design box and flips a single batched dirty flag on arrival,
-   which removes the old race where carousel targets were computed from
-   placeholder dimensions.
+   5. MEDIA DIMENSION REGISTRY / ASSET PIPELINE
    ========================================================================== */
-const requestIdle = window.requestIdleCallback || (cb => setTimeout(cb, 1));
-
-/* --------------------------------------------------------------------------
-   ASSET MANIFEST
-   --------------------------------------------------------------------------
-   Generated by scripts/build-assets.mjs. Paste the output over the object
-   below (or fetch it — see Assets.loadManifest).
-
-     "path/to/original.jpg": { w: 3000, h: 2000, v: [640,1280,2048] }
-
-   `w`/`h` are the intrinsic dimensions, so layout no longer has to download
-   every image just to measure it. `v` lists which derivative widths exist.
-   Derivatives live at:  assets/_derived/<path-without-ext>-<width>.<fmt>
-
-   With an EMPTY manifest everything still works — Assets falls back to the
-   original file and measures on load, exactly as before. Nothing here is
-   load-bearing until you run the build script.
-   -------------------------------------------------------------------------- */
 const ASSET_MANIFEST = {
     // "assets/projects/naivaa/collections/chokoleti/gallery/models.jpg":
     //     { w: 3000, h: 2000, v: [640, 1280, 2048] },
 };
 
 const Assets = (() => {
-    const dims = new Map();          // src -> { w, h, aspect }
+    const dims = new Map();
     const listeners = new Set();
-    const requested = new Set();     // network-warmed
-    const decoded = new Set();       // fully decoded (bounded — see below)
+    const requested = new Set();
+    const decoded = new Set();
     let bestFormat = 'jpg';
     let formatReady = false;
 
-    /* Format detection, once. */
+    /* FIX 3 (companion): every network job below is cancellable so that
+       navigating away actually stops the work instead of leaving abandoned
+       downloads competing with the images the user is now looking at. */
+    let controller = new AbortController();
+
     (function detectFormat() {
         const probe = (type, data) => new Promise(res => {
             const img = new Image();
@@ -1093,22 +1275,16 @@ const Assets = (() => {
         return i === -1 ? path : path.slice(0, i);
     }
 
-    /* Pick the smallest derivative that still covers the display size at the
-       current device pixel ratio. This is what actually fixes sharpness:
-       we stop upscaling a small file and stop shipping a 3000px original to
-       a phone. */
     function urlFor(src, displayCssPx) {
         const entry = ASSET_MANIFEST[src];
         if (!entry || !entry.v || !entry.v.length) return src;
-        /* Until format probing resolves we cannot know the extension, so
-           serve the original rather than guess a URL that may 404. */
         if (!formatReady) return src;
-        const needed = Math.ceil((displayCssPx || 0) * Math.min(V.dpr, 2));
+        const needed = Math.ceil((displayCssPx || 0) * Math.min(V.dpr, DPR_CAP));
         let pick = entry.v[entry.v.length - 1];
         for (let i = 0; i < entry.v.length; i++) {
             if (entry.v[i] >= needed) { pick = entry.v[i]; break; }
         }
-        if (pick >= entry.w) return src;   // derivative would be an upscale
+        if (pick >= entry.w) return src;
         return `assets/_derived/${stripExt(src)}-${pick}.${bestFormat}`;
     }
 
@@ -1120,16 +1296,11 @@ const Assets = (() => {
         listeners.forEach(fn => fn(src));
     }
 
-    /* Seed from the manifest so first layout is correct with zero downloads. */
     Object.keys(ASSET_MANIFEST).forEach(src => {
         const e = ASSET_MANIFEST[src];
         if (e && e.w && e.h) dims.set(src, { w: e.w, h: e.h, aspect: e.w / e.h });
     });
 
-    /* ---- connection awareness -------------------------------------------
-       Tiers 0-2 always run: they are the premium-feel budget and this is a
-       three-minute visit, not a content site. Only the speculative Tier 3
-       backfill is gated. */
     function allowBackfill() {
         const c = navigator.connection;
         if (!c) return true;
@@ -1137,9 +1308,6 @@ const Assets = (() => {
         return !/(^|-)2g$/.test(c.effectiveType || '');
     }
 
-    /* Warm the HTTP cache. `decode` is opt-in and deliberately rare: a
-       decoded 2000x1500 image is ~12MB of RAM, so decoding everything would
-       reintroduce the memory crash we are fixing elsewhere. */
     function warm(src, { decode = false, priority = 'low', displayPx = 0 } = {}) {
         const url = urlFor(src, displayPx);
         if (requested.has(url) && (!decode || decoded.has(url))) return Promise.resolve();
@@ -1162,7 +1330,7 @@ const Assets = (() => {
         return done;
     }
 
-    /* Serialised queue so tiers cannot stampede each other. */
+    /* Serialised queue, now driven by the real idle scheduler (FIX 8). */
     const queue = [];
     let draining = false;
     function drain() {
@@ -1172,9 +1340,9 @@ const Assets = (() => {
             if (!queue.length) { draining = false; return; }
             queue.sort((a, b) => a.tier - b.tier);
             const batch = queue.splice(0, 3).map(job => warm(job.src, job.opts));
-            Promise.all(batch).then(() => requestIdle(step));
+            Promise.all(batch).then(() => Idle.run(step));
         };
-        requestIdle(step);
+        Idle.run(step);
     }
     function enqueue(src, tier, opts) {
         if (requested.has(urlFor(src, opts && opts.displayPx))) return;
@@ -1197,32 +1365,38 @@ const Assets = (() => {
         get: (src) => dims.get(src) || null,
         setDims,
         onResolve(fn) { listeners.add(fn); },
+        get signal() { return controller.signal; },
 
-        /* TIER 1 — the cover images. The first three cards of each project's
-           first cluster are the only images on screen the instant a folder
-           opens, so they are the only ones worth warming speculatively. */
+        /* Drop everything still queued. Called on scene transitions so an
+           abandoned project stops competing for bandwidth and decode time. */
+        cancelPending() {
+            queue.length = 0;
+            controller.abort();
+            controller = new AbortController();
+        },
+
         warmCovers() {
-            allProjectsData.forEach((p, i) => {
+            allProjectsData.forEach((p) => {
                 const first = buildMediaData(p)[0];
                 if (!first) return;
-                first.assets.slice(0, 3).forEach(a => {
-                    if (a.type === 'img') enqueue(a.src, 1, { decode: true, priority: 'low', displayPx: 400 });
+                /* FIX (startup): only the FIRST cover per project is decoded
+                   eagerly now, not three. A decoded large image is ~12MB of
+                   short-lived RAM; twelve of them at t=1.5s produced an
+                   allocate-then-collect spike that showed up as a stutter. */
+                first.assets.slice(0, 3).forEach((a, idx) => {
+                    if (a.type === 'img') {
+                        enqueue(a.src, 1, { decode: idx === 0, priority: 'low', displayPx: 400 });
+                    }
                 });
             });
         },
 
-        /* TIER 2 — intent. The folder carousel tells us where the user is
-           going 1-3s before the click, and the open animation plus scene
-           crossfade adds ~1.9s more. That is enough runway for a whole
-           project on 4G, which is why this beats generic lazy-loading. */
         prefetchProject(i) {
             if (i === 99 || prefetchedProjects.has(i)) return;
             prefetchedProjects.add(i);
             projectImages(i).forEach(src => enqueue(src, 2, { priority: 'high', displayPx: 800 }));
         },
 
-        /* TIER 3 — speculative backfill, lowest priority, skipped on 2G or
-           Save-Data. */
         backfill() {
             if (!allowBackfill()) return;
             allProjectsData.forEach((_, i) => {
@@ -1232,30 +1406,45 @@ const Assets = (() => {
     };
 })();
 
-/* Kept as an alias so the rest of the module reads naturally. */
 const MediaDims = Assets;
 
 /* ==========================================================================
-   6. SCENE 2 — COLLECTIONS
+   5b. VIDEO POSTERS  (queued build step, like the KTX2 files)
    --------------------------------------------------------------------------
-   No WebGL context, no Three.js objects, no raycaster: a small perspective
-   projector does the same maths.
+   preload="none" is the cheapest possible resting state for a <video>: no
+   network, no decoder, no memory. But with no preload the element paints
+   nothing until playback starts, so it MUST have a poster or the card is
+   blank — and iOS in particular will not reliably paint a first frame from
+   preload="metadata" either.
 
-   Phase 2 changes the positioning model. The grid is now STATIC DOM living
-   inside the native scroll container, so the compositor scrolls it and zero
-   JavaScript runs during a grid scroll. The projector is used only for the
-   OPENING / CAROUSEL / CLOSING states.
+   Until posters are generated this stays false and videos keep
+   preload="metadata", which is the current (safe) behaviour. Flip `enabled`
+   to true once the files exist.
 
-   Previously every card was absolutely positioned in a sibling layer and
-   moved by JS from the scroll offset, which meant the cards trailed the
-   native scroller by at least one main-thread frame — always, on every
-   device — and froze outright whenever scroll events were coalesced during
-   iOS momentum. That was the lag and the label jump.
+   GENERATE WITH:
+     for f in $(find assets/projects -name '*.mp4' -o -name '*.webm'); do
+       out="assets/_posters/${f%.*}.webp"
+       mkdir -p "$(dirname "$out")"
+       ffmpeg -i "$f" -vf "select=eq(n\,0),scale=800:-1" -frames:v 1 -q:v 80 "$out"
+     done
+   ========================================================================== */
+const VIDEO_POSTERS = {
+    enabled: false,
+    dir: 'assets/_posters/',
+    ext: '.webp'
+};
 
-   Cards are reparented (scroller <-> overlay) exactly twice per open/close,
-   never per frame. Grid and projected coordinates are derived from the same
-   projector at the same scale, so the handoff is pixel-identical and needs
-   no FLIP measurement.
+function posterFor(src) {
+    if (!VIDEO_POSTERS.enabled) return '';
+    const noExt = src.replace(/\.[^.]+$/, '');
+    return `${VIDEO_POSTERS.dir}${noExt}${VIDEO_POSTERS.ext}`;
+}
+
+/* Resting preload level for a video that is not currently playing. */
+const IDLE_PRELOAD = () => (VIDEO_POSTERS.enabled ? 'none' : 'metadata');
+
+/* ==========================================================================
+   6. SCENE 2 — COLLECTIONS
    ========================================================================== */
 const S2 = (() => {
     const FOV = 45;
@@ -1268,13 +1457,32 @@ const S2 = (() => {
     const GAP_Y_RATIO = 1.65;
     const TITLE_OFFSET = 3.6;
 
-    /* Camera padding as a ratio. A card occupies 1/(1+pad) of the
-       constraining dimension, so these read directly as fill targets:
-       0.15 -> 87% (desktop), 0.28 -> 78% (single column). */
     const GRID_PAD = 0.15;
     const GRID_PAD_COMPACT = 0.28;
 
     const STATE = { CLUSTERED: 1, OPENING: 2, CAROUSEL: 3, CLOSING: 4 };
+
+    /* Video policy. The cap survives from earlier passes — mobile hardware
+       decoders are a small shared pool. The trigger is now uniform on both
+       desktop and touch: an IntersectionObserver drives playback everywhere.
+
+       Hover was tried and removed: it never actually worked. #click-blocker
+       (z-index 100) is a sibling of #dom-layer (z-index 10) in the SAME
+       stacking context, so no z-index a card sets on itself can place it
+       above the blocker — and the blocker is active for essentially the
+       entire open→carousel→closing lifetime. Video cards live inside
+       #dom-layer only while projected, i.e. exactly when the blocker is
+       covering them, so a mouseenter could never reach them. That's the
+       concrete reason hover read as "not showing at all."
+
+       New rule: the TOP card (index 0) of any cluster is an autoplay anchor
+       — it plays whenever it's visible, whether that's the resting grid
+       stack or an open carousel, and it always claims one of the two
+       playback slots. This is what makes a single-video cluster (most of
+       them) play continuously without the user doing anything. */
+    const MAX_CONCURRENT_VIDEOS = 2;
+    let videoObserver = null;
+    const playingVideos = [];   // membership only; cap is enforced by reconcileVideoPlayback
 
     const dom = {
         root: document.getElementById('scene-two'),
@@ -1296,15 +1504,14 @@ const S2 = (() => {
 
     const cam = { z: 20, y: 0 };
     let focal = 1;
-    let baseScale = 1;        // px per world unit at z = 0 (grid)
-    let rasterScale = 1;      // px per world unit the element BOX is sized at
+    let baseScale = 1;
+    let rasterScale = 1;
     let initialCamY = 0;
     let maxScrollPx = 0;
     let scrollAtOpen = 0;
 
     let state = STATE.CLUSTERED;
     let activeCluster = -1;
-    let keepStacked = -1;   // cluster whose full stack stays visible at rest
     let openProgress = 0;
     let arrival = 0;
     let carouselPos = 0;
@@ -1312,7 +1519,16 @@ const S2 = (() => {
     let carouselScale = 1;
     let carouselZ = 0;
     let layoutDirty = true;
-    let projecting = false;   // true whenever cards live in the overlay
+    let projecting = false;
+    let projectedCluster = -1;
+
+    /* FIX 9b: measured ONCE per open, not read inside the render loop.
+       layoutCarousel() previously called dom.info.getBoundingClientRect()
+       from inside frame(), immediately after GSAP's ticker had written styles
+       in the same frame — a textbook forced-synchronous-layout thrash. */
+    let infoSafeTop = 0;
+
+    let lastScrollOpacity = -1;
 
     /* ---------- projector ---------- */
     const scaleAt = (z) => focal / (cam.z - z);
@@ -1330,29 +1546,28 @@ const S2 = (() => {
         const cardScale = project.cardScale || 1.0;
         const built = [];
 
-        md.forEach((clusterData) => {
+        md.forEach((clusterData, clusterIndex) => {
             const cards = clusterData.assets.map((media, j) => {
                 const el = document.createElement('div');
                 el.className = 'dom-card';
 
                 let mediaEl;
                 if (media.type === 'video') {
+                    el.classList.add('is-video');
                     mediaEl = document.createElement('video');
                     mediaEl.loop = true;
                     mediaEl.muted = true;
                     mediaEl.playsInline = true;
                     mediaEl.setAttribute('playsinline', '');
-                    mediaEl.preload = 'metadata';
+                    mediaEl.preload = IDLE_PRELOAD();
+                    const poster = posterFor(media.src);
+                    if (poster) mediaEl.poster = poster;
                     mediaEl.src = media.src;
                     mediaEl.addEventListener('loadedmetadata', function () {
                         Assets.setDims(media.src, this.videoWidth, this.videoHeight);
                     });
                 } else {
                     mediaEl = document.createElement('img');
-                    /* No loading="lazy". These cards are positioned by
-                       transform and usually start outside the viewport, so
-                       lazy deferred them indefinitely — that is why images
-                       only appeared after the folder click. */
                     mediaEl.decoding = 'async';
                     mediaEl.alt = '';
                     mediaEl.addEventListener('load', function () {
@@ -1371,10 +1586,19 @@ const S2 = (() => {
                     baseRotZ = 10 * Math.PI / 180;
                 }
 
-                return {
+                const card = {
                     el, mediaEl,
                     src: media.src,
                     isVideo: media.type === 'video',
+                    playing: false,
+                    clusterIndex,
+                    /* Decode gate (item 3). `wanted` controls whether this
+                       card's <img> gets a src at all. Only the three covers
+                       of each cluster are wanted at project load; the rest
+                       are unlocked when their cluster is opened. Downloading
+                       (Assets.prefetchProject) stays as it was — this splits
+                       DECODE from DOWNLOAD rather than removing either. */
+                    wanted: false,
                     srcApplied: '',
                     srcNeeded: 0,
                     index: j,
@@ -1389,6 +1613,8 @@ const S2 = (() => {
                     lastZ: -1,
                     lastW: -1, lastH: -1
                 };
+
+                return card;
             });
 
             const titleEl = document.createElement('div');
@@ -1425,11 +1651,6 @@ const S2 = (() => {
         }
     }
 
-    /* The largest scale a card can ever reach, computed with the most
-       generous possible safe area. The element BOX is sized at this scale so
-       that a promoted layer is rasterised at full carousel resolution and
-       only ever scaled DOWN. Upscaling a composited layer is what made the
-       carousel look soft; downscaling is free and looks correct. */
     function maxCarouselScale(cardScale) {
         const padSide = V.width * 0.06;
         if (V.compact) return (V.width - padSide * 2) / (CARD_W * cardScale);
@@ -1444,12 +1665,11 @@ const S2 = (() => {
     /* ---------- grid layout (runs on resize, not on scroll) ---------- */
     function layoutGrid() {
         const cols = V.columns;
-        
         const cardScale = cache[activeProject] ? cache[activeProject].cardScale : 1;
 
         const gapX = (CARD_W * cardScale) * GAP_X_RATIO;
         const gapY = (CARD_H * cardScale) * GAP_Y_RATIO;
-        
+
         const baseTitleOffset = V.compact ? TITLE_OFFSET * 0.75 : TITLE_OFFSET;
         const titleOffset = baseTitleOffset * cardScale;
 
@@ -1458,16 +1678,6 @@ const S2 = (() => {
         const frameRows = cols === 1 ? 1 : 2;
         const pad = V.compact ? GRID_PAD_COMPACT : GRID_PAD;
 
-        /* On compact (single-column) layouts the camera must be fitted to the
-           actual rendered card dimensions, not the unscaled CARD_W/CARD_H
-           design constants. Projects with cardScale > 1 (Graphic Design,
-           Digital Art) were overflowing the viewport and blocking labels
-           because the camera was pulled back to fit the base box, then the
-           card was drawn at 1.26× inside that view. Including cardScale in
-           the frame geometry here pulls the camera back proportionally so
-           every project renders at the same visual size on screen.
-           Desktop (multi-column) frames are not affected — their frame
-           already spans multiple columns and the card fits within it. */
         const frameCardW = V.compact ? CARD_W * cardScale : CARD_W;
         const frameCardH = V.compact ? CARD_H * cardScale : CARD_H;
         const frameW = (cols - 1) * gapX + frameCardW;
@@ -1504,10 +1714,6 @@ const S2 = (() => {
         dom.scrollContent.style.height = (V.height + maxScrollPx) + 'px';
         applyScroll(dom.scroller.scrollTop);
 
-        /* Content-space position of each cluster. Content space is viewport
-           space at scrollTop = 0, so this is just screenX/screenY evaluated
-           with cam.y = initialCamY. The projector and the static grid
-           therefore agree exactly. */
         const contentY = (yWorld) => V.height / 2 - (yWorld - initialCamY) * baseScale;
 
         clusters.forEach((c) => {
@@ -1530,7 +1736,6 @@ const S2 = (() => {
         if (!projecting) writeGridTransforms();
     }
 
-    /* Element boxes are sized once per layout at rasterScale. */
     function sizeElements() {
         clusters.forEach(c => {
             c.cards.forEach(card => {
@@ -1542,12 +1747,7 @@ const S2 = (() => {
                     card.el.style.borderRadius = (CARD_RADIUS * rasterScale).toFixed(1) + 'px';
                     card.lastW = w; card.lastH = h;
                 }
-                /* Request the derivative that matches the largest size this
-                   card will actually be displayed at. */
-                if (!card.isVideo) {
-                    /* Only ever upgrade. Selecting a smaller variant after a
-                       resize would re-download and visibly reload an image
-                       that is already on screen at sufficient quality. */
+                if (!card.isVideo && card.wanted) {
                     const needed = card.wWorld * rasterScale;
                     if (needed > card.srcNeeded) {
                         const url = Assets.urlFor(card.src, needed);
@@ -1562,8 +1762,6 @@ const S2 = (() => {
         });
     }
 
-    /* Static grid transform. Written on layout and during the arrival
-       animation only — never during a scroll. */
     function writeGridTransforms() {
         const s = baseScale / rasterScale;
         clusters.forEach((c, i) => {
@@ -1574,15 +1772,7 @@ const S2 = (() => {
             const scale = s * (0.85 + 0.15 * ease);
 
             c.cards.forEach((card, j) => {
-                /* Cards beyond the top three are normally culled from the
-                   resting grid to save layer memory. The exception is the
-                   cluster the user just closed (keepStacked): its full set
-                   stays visible, stacked pixel-coincident behind the top
-                   three, so the carousel collapses back into a stack that
-                   still looks like it holds every image — the tactile
-                   illusion — with no visible reshape to three tiles. */
-                const stacked = i === keepStacked;
-                const display = (j < 3 || stacked) ? 'flex' : 'none';
+                const display = j < 3 ? 'flex' : 'none';
                 if (display !== card.lastDisplay) {
                     card.el.style.display = display;
                     card.lastDisplay = display;
@@ -1610,16 +1800,145 @@ const S2 = (() => {
         cam.y = initialCamY - clamp(px, 0, maxScrollPx) / baseScale;
     }
 
-    /* ---------- carousel layout (measured, per cluster) ---------- */
+    /* ---------- decode gating (item 3) ---------- */
+
+    /* Unlock decoding for a whole cluster. Called when the cluster is opened,
+       i.e. at the start of a ~1s animation — ample runway when the bytes are
+       already in the HTTP cache from Assets.prefetchProject. */
+    function ensureClusterDecoded(index) {
+        const c = clusters[index];
+        if (!c) return;
+        let changed = false;
+        c.cards.forEach(card => {
+            if (!card.wanted) { card.wanted = true; changed = true; }
+        });
+        if (changed) sizeElements();
+    }
+
+    /* ---------- video playback ---------- */
+    function startVideo(card) {
+        if (!card.isVideo || card.playing) return;
+        card.playing = true;
+        card.mediaEl.preload = 'auto';
+        const p = card.mediaEl.play();
+        if (p && p.catch) p.catch(() => { card.playing = false; });
+        if (playingVideos.indexOf(card) === -1) playingVideos.push(card);
+    }
+
+    /* Pause WITHOUT rewinding: returning the pointer/scroll resumes where it
+       left off, unless reset is requested (used when actually leaving). */
+    function stopVideo(card, reset = false) {
+        const i = playingVideos.indexOf(card);
+        if (i !== -1) playingVideos.splice(i, 1);
+        if (card.playing) {
+            card.playing = false;
+            card.mediaEl.pause();
+        }
+        if (reset) {
+            try { card.mediaEl.currentTime = 0; } catch (e) { /* not seekable yet */ }
+            card.mediaEl.preload = IDLE_PRELOAD();
+        }
+    }
+
+    /* Leaving ONE cluster (closing it) resets only that cluster's clips.
+       Other clusters' ambient top-card playback is untouched. */
+    function resetClusterVideos(index) {
+        const c = clusters[index];
+        if (!c) return;
+        c.cards.forEach(card => { if (card.isVideo) stopVideo(card, true); });
+    }
+
+    /* Leaving the whole project resets everything. */
+    function resetAllVideos() {
+        clusters.forEach(c => c.cards.forEach(card => {
+            if (card.isVideo) stopVideo(card, true);
+        }));
+        playingVideos.length = 0;
+    }
+
+    /* Single source of truth for the cap. Recomputes the target set of
+       cards that should be playing right now and diffs against reality —
+       stop first, then start, so the cap (MAX_CONCURRENT_VIDEOS) is never
+       exceeded even momentarily.
+
+       Two contexts, mutually exclusive:
+         - A cluster is open: every video card in THAT cluster is a
+           candidate. The top card (index 0) is always given priority for a
+           slot when visible; the remaining slot(s) go to whatever else is
+           most visible, so new videos join as the user scrolls toward them.
+         - Resting grid: only each cluster's TOP card is a candidate (that's
+           the only card ever shown at rest), so at most a couple of
+           different clusters' anchor videos can be playing ambiently at once. */
+    function reconcileVideoPlayback() {
+        let candidates;
+        if (activeCluster !== -1) {
+            const c = clusters[activeCluster];
+            candidates = c ? c.cards.filter(card => card.isVideo) : [];
+        } else {
+            candidates = clusters
+                .map(c => c.cards[0])
+                .filter(card => card && card.isVideo);
+        }
+
+        const visible = candidates.filter(card => (card.el._visRatio || 0) > 0.4);
+        visible.sort((a, b) => {
+            const aTop = a.index === 0 ? 1 : 0;
+            const bTop = b.index === 0 ? 1 : 0;
+            if (aTop !== bTop) return bTop - aTop;
+            return (b.el._visRatio || 0) - (a.el._visRatio || 0);
+        });
+
+        const shouldPlay = new Set(visible.slice(0, MAX_CONCURRENT_VIDEOS));
+        playingVideos.slice().forEach(card => { if (!shouldPlay.has(card)) stopVideo(card); });
+        shouldPlay.forEach(card => { if (!card.playing) startVideo(card); });
+    }
+
+    function ensureVideoObserver() {
+        if (videoObserver || typeof IntersectionObserver === 'undefined') return;
+        videoObserver = new IntersectionObserver((entries) => {
+            entries.forEach(e => { e.target._visRatio = e.intersectionRatio; });
+            reconcileVideoPlayback();
+        }, { threshold: [0, 0.25, 0.4, 0.6, 0.8, 1] });
+    }
+
+    /* Called once per project load: the top card of every video-bearing
+       cluster is watched for the lifetime of the project, so ambient
+       playback works in the resting grid without the user opening anything. */
+    function observeTopCards() {
+        ensureVideoObserver();
+        if (!videoObserver) return;
+        clusters.forEach(c => {
+            const top = c.cards[0];
+            if (top && top.isVideo) videoObserver.observe(top.el);
+        });
+    }
+
+    /* Called on open(): extends observation to the rest of that cluster's
+       video cards (idempotent — re-observing the top card is a no-op). */
+    function observeClusterVideos(index) {
+        ensureVideoObserver();
+        if (!videoObserver) return;
+        const c = clusters[index];
+        if (!c) return;
+        c.cards.forEach(card => { if (card.isVideo) videoObserver.observe(card.el); });
+    }
+
+    function unobserveVideos() {
+        if (videoObserver) videoObserver.disconnect();
+    }
+
+    /* ---------- carousel layout ---------- */
+    function measureInfoSafeTop() {
+        const infoRect = dom.info.getBoundingClientRect();
+        const gap = V.height * 0.035;
+        infoSafeTop = Math.max(infoRect.bottom + gap, V.height * 0.12);
+    }
+
     function layoutCarousel(clusterIndex) {
         const c = clusters[clusterIndex];
         if (!c) return;
 
-        /* Measured, not guessed: the info panel's real rendered box decides
-           where cards may start, so wrapped text can never overlap them. */
-        const infoRect = dom.info.getBoundingClientRect();
-        const gap = V.height * 0.035;
-        const safeTop = Math.max(infoRect.bottom + gap, V.height * 0.12);
+        const safeTop = infoSafeTop || V.height * 0.12;
         const padSide = V.width * 0.06;
         const padBottom = V.height * 0.08;
 
@@ -1676,32 +1995,47 @@ const S2 = (() => {
     function relayout() {
         if (!clusters.length) return;
         layoutGrid();
-        if (activeCluster !== -1) layoutCarousel(activeCluster);
+        if (activeCluster !== -1) {
+            measureInfoSafeTop();
+            layoutCarousel(activeCluster);
+        }
     }
 
-    /* ---------- reparenting: twice per transition, never per frame ------- */
-    function enterProjected() {
+    /* ---------- reparenting (FIX 6) ----------------------------------------
+       Only the cluster actually being opened is promoted and projected. The
+       rest of the grid stays exactly where it is and is faded as ONE
+       composited group via #native-scroll-content.
+
+       Before: every card in every cluster got `will-change`, `display:flex`
+       and a reparent on the same frame the open animation began — roughly
+       20-30 layer creations plus decodes for cards that were about to be
+       hidden again one frame later. That was the open-transition stutter.
+       ---------------------------------------------------------------------- */
+    function enterProjected(idx) {
         projecting = true;
-        clusters.forEach(c => {
-            c.cards.forEach(card => {
-                card.el.classList.add('animating');
-                card.el.style.left = '0px';
-                card.el.style.top = '0px';
-                if (card.lastDisplay !== 'flex') {
-                    card.el.style.display = 'flex';
-                    card.lastDisplay = 'flex';
-                }
-                card.lastTransform = '';
-                card.lastOpacity = -1;
-                card.lastZ = -1;
-                dom.layer.appendChild(card.el);
-            });
+        projectedCluster = idx;
+        dom.scrollContent.classList.add('fading');
+        const c = clusters[idx];
+        c.cards.forEach(card => {
+            card.el.classList.add('animating');
+            card.el.style.left = '0px';
+            card.el.style.top = '0px';
+            if (card.lastDisplay !== 'flex') {
+                card.el.style.display = 'flex';
+                card.lastDisplay = 'flex';
+            }
+            card.lastTransform = '';
+            card.lastOpacity = -1;
+            card.lastZ = -1;
+            dom.layer.appendChild(card.el);
         });
     }
 
-    function exitProjected() {
+    function exitProjected(idx) {
         projecting = false;
-        clusters.forEach(c => {
+        projectedCluster = -1;
+        const c = clusters[idx];
+        if (c) {
             c.cards.forEach(card => {
                 card.el.classList.remove('animating');
                 card.el.style.left = card.gridX + 'px';
@@ -1710,21 +2044,22 @@ const S2 = (() => {
                 card.lastOpacity = -1;
                 dom.scrollContent.appendChild(card.el);
             });
-        });
+        }
+        dom.scrollContent.classList.remove('fading');
+        dom.scrollContent.style.opacity = '';
+        lastScrollOpacity = -1;
         writeGridTransforms();
     }
 
     /* ---------- project activation / deactivation ---------- */
     function deactivateCurrent() {
         if (activeProject === -1 || !cache[activeProject]) return;
+        unobserveVideos();
+        resetAllVideos();
         cache[activeProject].clusters.forEach(c => {
             c.cards.forEach(card => {
                 if (card.el.parentNode) card.el.parentNode.removeChild(card.el);
                 card.lastDisplay = '';
-                if (card.isVideo) {
-                    card.mediaEl.pause();
-                    card.mediaEl.preload = 'metadata';
-                }
             });
             if (c.titleEl.parentNode) c.titleEl.parentNode.removeChild(c.titleEl);
         });
@@ -1739,20 +2074,18 @@ const S2 = (() => {
         clusters = rec.clusters;
         mediaData = rec.mediaData;
         projecting = false;
+        projectedCluster = -1;
 
         clusters.forEach(c => {
-            c.cards.forEach(card => {
+            c.cards.forEach((card, j) => {
+                /* Only the three covers are decoded up front (item 3). */
+                if (j < 3) card.wanted = true;
                 card.el.classList.remove('animating');
                 card.lastTransform = '';
                 card.lastOpacity = -1;
                 card.lastDisplay = '';
                 card.lastW = -1;
                 dom.scrollContent.appendChild(card.el);
-                if (card.isVideo) {
-                    card.mediaEl.preload = 'auto';
-                    const p = card.mediaEl.play();
-                    if (p && p.catch) p.catch(() => {});
-                }
             });
             c.titleEl.style.opacity = 1;
             c.lastTitleOpacity = 1;
@@ -1765,9 +2098,13 @@ const S2 = (() => {
 
         state = STATE.CLUSTERED;
         activeCluster = -1;
-        keepStacked = -1;
         openProgress = 0;
         carouselPos = carouselTarget = 0;
+
+        /* Watch every cluster's top card for the lifetime of this project, so
+           a single-video cluster (most of them) just plays continuously
+           once it's visible — grid or carousel, no interaction needed. */
+        observeTopCards();
 
         relayout();
 
@@ -1798,24 +2135,32 @@ const S2 = (() => {
         dom.infoTitle.textContent = data.title;
         dom.infoDesc.innerHTML = data.description;
 
-        /* Force a synchronous layout read so the measured safe area reflects
-           THIS cluster's description before carousel geometry is built. */
-        void dom.info.offsetHeight;
+        /* Unlock decoding for this cluster's non-cover images (item 3). */
+        ensureClusterDecoded(index);
+
+        /* One deliberate synchronous measurement, taken here and cached for
+           the whole open/carousel/close cycle. */
+        measureInfoSafeTop();
 
         scrollAtOpen = dom.scroller.scrollTop;
         applyScroll(scrollAtOpen);
         carouselPos = carouselTarget = 0;
         layoutCarousel(index);
 
-        /* overflow:hidden preserves scrollTop, so the grid position is
-           restored exactly on close with no bookkeeping. */
         dom.scroller.style.overflowY = 'hidden';
         dom.blocker.classList.add('active');
         dom.info.classList.add('active');
         dom.closeBtn.classList.add('active');
         dom.backBtn.classList.remove('active');
 
-        enterProjected();
+        enterProjected(index);
+        /* Extends observation from just the top card to every video card in
+           this cluster. If the top card was already playing ambiently in the
+           grid, it keeps playing right through this transition — nothing
+           restarts. The rest join as their IntersectionObserver entries
+           arrive (typically within a frame). */
+        observeClusterVideos(index);
+        reconcileVideoPlayback();
 
         state = STATE.OPENING;
         openProgress = 0;
@@ -1831,35 +2176,46 @@ const S2 = (() => {
     function close(instant = false) {
         if (activeCluster === -1) return;
 
+        const closing = activeCluster;
+
         dom.closeBtn.classList.remove('active');
         dom.backBtn.classList.add('active');
         dom.scroller.style.overflowY = 'auto';
         state = STATE.CLOSING;
 
-        /* Instant close must be synchronous. A zero-duration tween still
-           resolves on the next tick, which meant load() could swap in the
-           next project before the teardown ran and reparent the wrong
-           elements. */
+        /* Leaving THIS cluster resets its own clips. Other clusters' ambient
+           top-card playback is untouched — closing one carousel shouldn't
+           interrupt an unrelated video quietly looping in the grid. */
+        resetClusterVideos(closing);
+
         if (instant) {
             dom.info.classList.remove('active');
             dom.blocker.classList.remove('active');
             openProgress = 0;
             carouselPos = carouselTarget = 0;
             state = STATE.CLUSTERED;
-            keepStacked = -1;
             activeCluster = -1;
-            exitProjected();
+            exitProjected(closing);
+            reconcileVideoPlayback();
             return;
         }
 
+        /* Both halves of the return now run CONCURRENTLY. They used to be
+           sequential — scroll the carousel strip back to its start, THEN
+           collapse into the stack — which read as two separate snaps
+           (the strip re-arranging itself, then a hard cut to 3 images). Now
+           both tweens start at the same instant, and cards past index 3 fade
+           to fully transparent as part of the same motion (frame()'s
+           state === CLOSING branch), so what's left when everything settles
+           is already just the 3-card stack at its resting opacity. */
         const tl = gsap.timeline({
             defaults: { ease: 'power2.inOut' },
             onComplete: () => {
                 state = STATE.CLUSTERED;
-                keepStacked = activeCluster;   // its full stack stays visible
                 activeCluster = -1;
                 carouselPos = carouselTarget = 0;
-                exitProjected();
+                exitProjected(closing);
+                reconcileVideoPlayback();
             }
         });
 
@@ -1868,7 +2224,7 @@ const S2 = (() => {
             tl.to(proxy, {
                 v: 0, duration: V.compact ? 0.63 : 0.9,
                 onUpdate: () => { carouselPos = carouselTarget = proxy.v; }
-            });
+            }, 0);
         } else {
             carouselPos = carouselTarget = 0;
         }
@@ -1876,7 +2232,7 @@ const S2 = (() => {
         tl.call(() => {
             dom.info.classList.remove('active');
             dom.blocker.classList.remove('active');
-        });
+        }, null, 0);
 
         const proxy2 = { v: openProgress };
         tl.to(proxy2, {
@@ -1884,7 +2240,7 @@ const S2 = (() => {
             duration: REDUCED_MOTION ? 0 : (V.compact ? 1.1808 : 1.496),
             ease: 'power2.out',
             onUpdate: () => { openProgress = proxy2.v; }
-        }, REDUCED_MOTION ? 0 : '+=0.09');
+        }, 0);
     }
 
     function applyCarouselDelta(deltaPx) {
@@ -1894,7 +2250,7 @@ const S2 = (() => {
         carouselTarget = clamp(carouselTarget + (deltaPx / carouselScale) * speed, 0, c.maxScroll);
     }
 
-    /* ---------- hit testing (screen-space rect, no raycaster) ---------- */
+    /* ---------- hit testing ---------- */
     function hitTest(px, py) {
         for (let i = 0; i < clusters.length; i++) {
             const c = clusters[i];
@@ -1912,9 +2268,6 @@ const S2 = (() => {
 
     function frame() {
         if (layoutDirty) { layoutDirty = false; relayout(); }
-
-        /* The whole point of the new positioning model: when the grid is at
-           rest there is nothing to do, and a scroll does not change that. */
         if (!projecting) return;
 
         if (state === STATE.CAROUSEL) {
@@ -1930,88 +2283,69 @@ const S2 = (() => {
             dom.info.style.transform = V.compact ? 'translate3d(-50%, 0, 0)' : 'translate3d(0, 0, 0)';
         }
 
-        const titleOffset = V.compact ? TITLE_OFFSET * 0.75 : TITLE_OFFSET;
-        const pushZ = -cam.z * 0.25;
+        /* The whole un-opened grid fades as ONE layer (FIX 6). */
+        const gridOpacity = +(1 - openProgress).toFixed(3);
+        if (gridOpacity !== lastScrollOpacity) {
+            dom.scrollContent.style.opacity = gridOpacity;
+            lastScrollOpacity = gridOpacity;
+        }
+
+        const i = projectedCluster;
+        const c = clusters[i];
+        if (!c) return;
+
         const rasterRatio = 1 / rasterScale;
+        const n = c.cards.length;
+        const durationMul = 1 + FIXED_STAGGER;
+        const stagger = n > 1 ? FIXED_STAGGER / (n - 1) : 0;
 
-        for (let i = 0; i < clusters.length; i++) {
-            const c = clusters[i];
-            const isActive = i === activeCluster;
+        for (let j = 0; j < n; j++) {
+            const card = c.cards[j];
+            const startX = c.home.x;
+            const startY = c.home.y;
+            const startZ = -j * 0.1;
 
-            const titleOpacity = 1 - openProgress;
-            if (titleOpacity !== c.lastTitleOpacity) {
-                c.titleEl.style.opacity = titleOpacity;
-                c.lastTitleOpacity = titleOpacity;
+            const p = clamp(openProgress * durationMul - j * stagger, 0, 1);
+            const arc = Math.sin(p * Math.PI) * Math.min(2.0, cam.z * 0.12);
+
+            const endX = V.compact ? card.cx : card.cx - carouselPos;
+            const endY = V.compact ? (cam.y + card.cy + carouselPos) : (cam.y + card.cy);
+            const x = startX + (endX - startX) * p;
+            const y = startY + (endY - startY) * p;
+            const z = startZ + (carouselZ - startZ) * p + arc;
+            const rot = card.baseRotZ * (1 - p);
+
+            /* Cards beyond the resting 3-stack fade out as they collapse
+               (p: 1 = fully in carousel, 0 = fully home) rather than being
+               cut with display:none the instant the animation completes.
+               Higher-index cards finish their journey home earliest (see the
+               stagger below), so by the time the last of the 3 stack cards
+               settles, everything else has already faded to nothing — no
+               visible snap at the handoff. Only applies while CLOSING; the
+               open sequence is unchanged. */
+            const opacity = (state === STATE.CLOSING && j >= 3) ? p : 1;
+            if (card.lastOpacity !== opacity) { card.el.style.opacity = opacity; card.lastOpacity = opacity; }
+            if (card.lastDisplay !== 'flex') { card.el.style.display = 'flex'; card.lastDisplay = 'flex'; }
+
+            const s = scaleAt(z) * rasterRatio;
+            const sx = screenX(x, z);
+            const sy = screenY(y, z);
+            if (!isFinite(sx) || !isFinite(sy) || !isFinite(s)) continue;
+
+            const transform =
+                `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(1)}px, 0) translate(-50%, -50%) ` +
+                `scale(${s.toFixed(4)}) rotateZ(${(-rot).toFixed(4)}rad)`;
+            if (transform !== card.lastTransform) {
+                card.el.style.transform = transform;
+                card.lastTransform = transform;
             }
 
-            const n = c.cards.length;
-            const durationMul = 1 + FIXED_STAGGER;
-            const stagger = n > 1 ? FIXED_STAGGER / (n - 1) : 0;
-
-            for (let j = 0; j < n; j++) {
-                const card = c.cards[j];
-                const startX = c.home.x;
-                const startY = c.home.y;
-                const startZ = -j * 0.1;
-
-                const p = clamp(openProgress * durationMul - j * stagger, 0, 1);
-                const arc = Math.sin(p * Math.PI) * Math.min(2.0, cam.z * 0.12);
-
-                let x, y, z, rot, opacity;
-
-                if (isActive) {
-                    const endX = V.compact ? card.cx : card.cx - carouselPos;
-                    const endY = V.compact ? (cam.y + card.cy + carouselPos) : (cam.y + card.cy);
-                    x = startX + (endX - startX) * p;
-                    y = startY + (endY - startY) * p;
-                    z = startZ + (carouselZ - startZ) * p + arc;
-                    rot = card.baseRotZ * (1 - p);
-                    /* Deep cards stay fully opaque throughout, so on close
-                       (p -> 0) they settle onto the cluster stack rather than
-                       fading out of existence. This is what removes the visual
-                       reduction-to-three on return. */
-                    opacity = 1;
-                } else {
-                    const endX = c.home.x + c.home.x * 0.8;
-                    const endY = c.home.y + (c.home.y - cam.y) * 0.8;
-                    x = startX + (endX - startX) * p;
-                    y = startY + (endY - startY) * p;
-                    z = startZ + (pushZ - startZ) * p;
-                    rot = card.baseRotZ;
-                    opacity = (j < 3 ? 1 : 0) * (1 - p);
-                }
-
-                if (opacity !== card.lastOpacity) { card.el.style.opacity = opacity; card.lastOpacity = opacity; }
-                const display = opacity < 0.005 ? 'none' : 'flex';
-                if (display !== card.lastDisplay) { card.el.style.display = display; card.lastDisplay = display; }
-                if (display === 'none') continue;
-
-                /* Box is already sized at rasterScale, so the transform only
-                   needs the ratio between the current projected scale and
-                   that raster scale — a value <= 1 in every state. */
-                const s = scaleAt(z) * rasterRatio;
-                const sx = screenX(x, z);
-                const sy = screenY(y, z);
-                if (!isFinite(sx) || !isFinite(sy) || !isFinite(s)) continue;
-
-                const transform =
-                    `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(1)}px, 0) translate(-50%, -50%) ` +
-                    `scale(${s.toFixed(4)}) rotateZ(${(-rot).toFixed(4)}rad)`;
-                if (transform !== card.lastTransform) {
-                    card.el.style.transform = transform;
-                    card.lastTransform = transform;
-                }
-
-                const zi = (isActive ? 2000 : 500) + i * 100 + (n - j);
-                if (zi !== card.lastZ) { card.el.style.zIndex = zi; card.lastZ = zi; }
-            }
+            const zi = 2000 + i * 100 + (n - j);
+            if (zi !== card.lastZ) { card.el.style.zIndex = zi; card.lastZ = zi; }
         }
     }
 
     /* ---------- events ---------- */
-    /* Native scroll is the only authority for the grid. This handler updates
-       one number and touches no DOM, so a grid scroll stays entirely on the
-       compositor. */
     dom.scroller.addEventListener('scroll', () => {
         if (Router.scene !== 2 || projecting) return;
         applyScroll(dom.scroller.scrollTop);
@@ -2028,7 +2362,16 @@ const S2 = (() => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); close(); }
     });
 
-    Assets.onResolve(() => { if (activeProject !== -1) layoutDirty = true; });
+    /* FIX 9a: a full relayout per resolved image meant ~20-60 grid relayouts
+       while a project's images streamed in — each one rewriting width/height/
+       radius on every card. Trailing debounce collapses that to one. */
+    let resolveTimer = null;
+    Assets.onResolve(() => {
+        if (activeProject === -1) return;
+        clearTimeout(resolveTimer);
+        resolveTimer = setTimeout(() => { layoutDirty = true; }, 150);
+    });
+
     V.onChange(() => { if (activeProject !== -1) layoutDirty = true; });
 
     Loop.register(2, frame);
@@ -2046,24 +2389,16 @@ const S2 = (() => {
    ========================================================================== */
 const container = document.getElementById('canvas-container');
 
-/* antialias is back on for every device. Phase 1 disabled it on all mobile,
-   which visibly softened the glass folder edges. On the tile-based GPUs in
-   phones MSAA resolves in tile memory and is comparatively cheap — for
-   geometry-edge-dominated content it buys more perceived quality per unit
-   cost than raw resolution does. */
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
 renderer.setSize(V.width, V.height, false);
 renderer.domElement.style.width = '100%';
 renderer.domElement.style.height = '100%';
-Governor.register('scene1', (r) => renderer.setPixelRatio(r));
-renderer.shadowMap.enabled = false;   // nothing in the scene receives shadows
+Governor.register('scene1', 1, (r) => renderer.setPixelRatio(r));
+renderer.shadowMap.enabled = false;
 renderer.autoClear = false;
 renderer.setClearColor('#CCCCCC', 1);
 container.appendChild(renderer.domElement);
-guardContext(renderer, 'scene1', () => {
-    /* Shaders and buffers are recreated by three.js on the next render; we
-       only need to re-upload the environment map, which lived in a render
-       target that did not survive. */
+const scene1Guard = guardContext(renderer, 'scene1', 1, () => {
     rebuildFolderEnvironment();
 });
 
@@ -2168,12 +2503,26 @@ const dynamicVertexStage = `
     }
 `;
 
+/* FIX 11 — `discard` removed.
+   The old shader did:
+       if (length(particleCoord) > 0.5) discard;
+       ...
+       if (softEdgeAlpha < 0.01) discard;
+
+   On Apple/PowerVR tile-based GPUs, a shader containing `discard` becomes
+   "may kill fragments", which disables hidden-surface removal and early-Z for
+   the entire draw call. With 3060 overlapping alpha-blended sprites that is a
+   large, entirely avoidable fill-rate penalty.
+
+   The visual result is IDENTICAL: smoothstep(0.5, 0.33, len) is already 0 for
+   len >= 0.5, so every fragment the old code discarded now simply emits alpha
+   0 — which blends to nothing. No pixel changes; the GPU just stops being told
+   the shader might kill fragments. */
 const dynamicFragmentStage = `
     uniform float uClearProgress; uniform float uBurnProgress; uniform float uTimeline; uniform float uGlobalAlpha;
     varying float vGlowIntensity; varying float vAlpha; varying float vType; varying float vColorType; varying float vColorMix;
     void main() {
         vec2 particleCoord = gl_PointCoord - vec2(0.5);
-        if(length(particleCoord) > 0.5) discard;
         vec3 colorA = vec3(0.627, 0.627, 0.627); vec3 colorB = vec3(0.784, 0.784, 0.784);
         vec3 colorC = vec3(0.910, 0.910, 0.910); vec3 colorD = vec3(1.000, 1.000, 1.000);
         float p = clamp((uBurnProgress - vColorType * 0.4) / 0.6, 0.0, 1.0);
@@ -2186,7 +2535,6 @@ const dynamicFragmentStage = `
         if (vColorMix > 0.01) { finalShadingColor += particleColor * (vGlowIntensity * pulse); }
         float fadeOut = (vType > 0.5) ? mix(1.0, 0.5, uClearProgress) : 1.0;
         float softEdgeAlpha = smoothstep(0.5, 0.33, length(particleCoord)) * 0.95 * vAlpha * fadeOut * uGlobalAlpha;
-        if (softEdgeAlpha < 0.01) discard;
         gl_FragColor = vec4(finalShadingColor, softEdgeAlpha);
     }
 `;
@@ -2257,9 +2605,6 @@ const carouselScene = new THREE.Scene();
 const carouselCam = new THREE.PerspectiveCamera(FOLDER_FOV, V.aspect, 0.1, 2000);
 carouselCam.position.set(0, 0, FOLDER_CAM_Z);
 
-/* Declared as a hoisted function so the context-restore handler registered
-   above can call it. The PMREM lives in a render target, which does not
-   survive context loss and has to be regenerated. */
 let envRT = null;
 function rebuildFolderEnvironment() {
     if (envRT) envRT.dispose();
@@ -2313,6 +2658,15 @@ function parseSVGPath(pathStr) {
     return shape;
 }
 
+/* NOTE ON `transparent: true` (audit item 12, revised during implementation)
+   ---------------------------------------------------------------------------
+   The audit suggested dropping `transparent: true` here as redundant alongside
+   `transmission`. On closer reading of the r160 material chain that is WRONG
+   and it has been left in place deliberately: with `transparent: false`,
+   three.js forces the output alpha to 1, which would discard both this
+   material's `opacity` (0.756 front / 0.98 back) AND the thaw shader's
+   `diffuseColor.a` override. Removing it would visibly change the glass.
+   The flag stays. */
 function createGlassMaterial(isFront) {
     const mat = new THREE.MeshPhysicalMaterial({
         color: isFront ? 0xb5b5b5 : 0xcacaca,
@@ -2327,7 +2681,6 @@ function createGlassMaterial(isFront) {
         clearcoatRoughness: 0.1
     });
 
-    /* The noise "thaw" shader is a capability decision, not a width decision. */
     if (!LOW_POWER) {
         mat.onBeforeCompile = (shader) => {
             shader.vertexShader = `
@@ -2465,7 +2818,7 @@ for (let i = 0; i < 5; i++) {
     carouselGroup.add(f);
 }
 
-/* ---- Scene 1 responsive sizing: continuous, no breakpoints ---- */
+/* ---- Scene 1 responsive sizing ---- */
 const Scene1Layout = {
     orbRadius: 0.5,
     particleSize: 28.98,
@@ -2481,18 +2834,13 @@ function layoutScene1() {
     carouselCam.aspect = V.aspect;
     carouselCam.updateProjectionMatrix();
 
-    renderer.setPixelRatio(Governor.ratioFor('scene1'));
+    renderer.setPixelRatio(Governor.ratioFor());
     renderer.setSize(V.width, V.height, false);
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
 
     clusterMaterial.uniforms.uAspect.value = V.aspect;
 
-    /* Orb: one continuous function.
-       t = 0 (tall portrait) → the orb is width-constrained and fills ~70%
-       t = 1 (landscape)     → the orb is height-constrained and fills ~31%
-       Between them it interpolates, so the 2.6× jump that used to happen at
-       760/768px no longer exists at any width. */
     const orbView = visibleSizeAt(ORB_CAM_Z, ORB_FOV);
     const constraining = Math.min(orbView.w, orbView.h);
     const fillFraction = mix(0.70, 0.31, V.t);
@@ -2506,17 +2854,12 @@ function layoutScene1() {
     clusterMaterial.uniforms.uBreathIntensity.value = Scene1Layout.breath;
     orbScene.position.y = Scene1Layout.orbOffsetY;
 
-    /* Folders: same continuous treatment. The folder artwork is ~3000 units
-       across in design space; scale it to a fraction of the constraining
-       viewport dimension that blends between portrait and landscape. */
     const folderView = visibleSizeAt(FOLDER_CAM_Z, FOLDER_FOV);
     const folderMin = Math.min(folderView.w, folderView.h);
     const folderFill = mix(0.9775, 0.81, V.t);
     const s = (folderMin * folderFill) / 3000;
     carouselGroup.scale.set(s, s, s);
 
-    /* The entrance travel is now proportional to the viewport, not the
-       world constant -110. */
     Scene1Layout.entranceY = -folderView.h * 1.66;
     entranceState.targetY = mix(Scene1Layout.entranceY, 0, lastCarouselEntrance);
 }
@@ -2541,6 +2884,12 @@ const inverseCarouselMatrix = new THREE.Matrix4();
 const tempMat = new THREE.Matrix4();
 
 const labelCache = Array.from({ length: 5 }, () => ({ x: -9999, y: -9999, focus: false, hover: false, lastT: '' }));
+
+/* FIX 7 — boot fade driven by the render loop, not setInterval.
+   The old code ran a 30ms setInterval for 1.5s alongside a 16.7ms rAF. Two
+   independent clocks at non-harmonic rates produce visible beat-frequency
+   jitter during the exact window the user is forming their first impression. */
+let bootFade = { active: false, t: 0, duration: 1.5 };
 
 /* ---- typewriter ---- */
 const homeBtn = document.getElementById('home-btn');
@@ -2617,6 +2966,9 @@ function hideInteractText() {
 }
 
 homeBtn.addEventListener('click', () => {
+    /* Invalidate any in-flight transition so its deferred callbacks cannot
+       re-assert carousel state over this deliberate return to the orb. */
+    beginTransition();
     VirtualScroll.raw = 0;
     targetScrollProgress = 0;
     targetRotation = 0;
@@ -2640,7 +2992,11 @@ function triggerFolderClose() {
 function triggerFolderOpenSequence(folder, projectIndex) {
     transitionState = 'OPENING';
     Router.forceField = 1.0;
-    setTimeout(() => openCollectionFromFolder(projectIndex), 1050);
+    const id = beginTransition();
+    setTimeout(() => {
+        if (!isCurrentTransition(id)) return;
+        openCollectionFromFolder(projectIndex, id);
+    }, 1050);
 }
 
 function applyVirtualScroll(deltaY) {
@@ -2671,6 +3027,13 @@ function applyVirtualScroll(deltaY) {
 }
 
 function frameScene1(dt, time) {
+    /* FIX 7 */
+    if (bootFade.active) {
+        bootFade.t = Math.min(1, bootFade.t + dt / bootFade.duration);
+        clusterMaterial.uniforms.uGlobalAlpha.value = smoothstep(0, 1, bootFade.t);
+        if (bootFade.t >= 1) bootFade.active = false;
+    }
+
     currentForceField = THREE.MathUtils.lerp(currentForceField, Router.forceField, 0.05);
     clusterMaterial.uniforms.uForceField.value = currentForceField;
 
@@ -2688,7 +3051,6 @@ function frameScene1(dt, time) {
     entranceState.targetY = mix(Scene1Layout.entranceY, 0, carouselEntrance);
     const prevPosY = entranceState.posY;
 
-    /* Settling speed blends with viewport shape instead of switching at 768. */
     const speedBoost = mix(5.0, 1.0, V.t);
     const lerpMin = (isSnapping ? 0.048 : 0.03125) * speedBoost;
     const lerpMax = (isSnapping ? 0.173 : 0.1109) * speedBoost;
@@ -2832,19 +3194,15 @@ function frameScene1(dt, time) {
         cache.hover = folder.userData.isHovered;
 
         /* TIER 2 INTENT SIGNAL.
-           A centred or hovered folder is the strongest prediction we have of
-           the next click, and it arrives 1-3s early. Add the 1050ms open
-           sequence and the 800ms scene crossfade and there is ~3-5s of
-           runway — enough for a whole project on 4G. This is what makes
-           entering a folder feel instant, and it is why generic lazy-loading
-           was the wrong tool here.
+           A centred or hovered folder predicts the next click 1-3s early.
 
-           The mind map is included, but only now: it is what pushed the GPU
-           over its budget when Phase 1 prefetched it unconditionally, and
-           with the TILE_PX cap it costs ~26-106MB instead of ~1.2GB. */
+           CHANGED: the mind map's intent signal now only warms the HTTP cache
+           (Scene3.prefetch). It no longer builds a WebGL context, decodes
+           textures or allocates GPU memory — that all happens in Scene3.mount()
+           when the user actually commits to entering. */
         if ((cache.focus || cache.hover) && !isSystemLocked) {
             const pIdx = PROJECT_INDEX[folderNames[i]];
-            if (pIdx === 99) Scene3.ensureLoaded();
+            if (pIdx === 99) Scene3.prefetch();
             else if (pIdx !== undefined) Assets.prefetchProject(pIdx);
         }
 
@@ -2871,63 +3229,101 @@ function frameScene1(dt, time) {
 Loop.register(1, frameScene1);
 
 /* ==========================================================================
-   8. SCENE 3 — MIND MAP
+   8. SCENE 3 — MIND MAP  (lazily mounted / fully unmounted)
    --------------------------------------------------------------------------
-   Textures are no longer loaded at page start. 76 images are fetched on first
-   entry (or on an opportunistic prefetch once the folder carousel becomes
-   interactive), and released on pagehide.
+   ARCHITECTURAL CHANGE: the renderer, its WebGL context, OrbitControls, the
+   tile geometry, all 76 textures and the globe are now created in mount() and
+   destroyed in unmount().
+
+   Before, the whole thing was constructed at module-evaluation time. That
+   meant a second full-screen MSAA framebuffer (~40MB on a modern phone) plus
+   a second WebGL context existed for the entire session even for visitors who
+   never opened the mind map — on top of scene 1's own framebuffer and the
+   transmission render target. That standing cost is a large part of why the
+   page sat close enough to the iOS memory ceiling that entering the mind map
+   could tip it over.
+
+   TEXTURE FORMAT: tiles are loaded as KTX2 (Basis Universal) when available.
+   KTX2 transcodes to the GPU's native compressed format — ASTC on Apple,
+   ETC2/DXT elsewhere — so the tiles stay compressed IN GPU MEMORY:
+
+       RGBA8 + mips :  76 x ~1.4MB  ~= 106MB
+       ASTC/ETC2    :  76 x ~0.3MB  ~=  22MB
+
+   plus no CPU-side bitmap is retained at all. If the .ktx2 files are missing
+   the loader falls back per-file to the previous ImageBitmap path, which now
+   also closes its bitmap after upload (FIX 4).
    ========================================================================== */
+
+/* ---- BUILD STEP REQUIRED FOR THE COMPRESSED PATH -------------------------
+   Two one-time tasks. Nothing here breaks if they are skipped — the loader
+   falls back per-tile to the original images — but the memory win only
+   arrives once the .ktx2 files exist.
+
+   1. GENERATE THE TEXTURES (needs the KTX-Software `toktx` binary:
+      `brew install ktx`, or a release build from
+      github.com/KhronosGroup/KTX-Software). Run from the project root:
+
+        mkdir -p assets/projects/mind-map/gallery/ktx2
+        for f in assets/projects/mind-map/gallery/*.jpeg \
+                 assets/projects/mind-map/gallery/*.JPG \
+                 assets/projects/mind-map/gallery/*.png; do
+          [ -e "$f" ] || continue
+          n=$(basename "$f"); n="${n%.*}"
+          toktx --encode uastc --uastc_quality 2 --genmipmap --zcmp 18 \
+                --resize 512x512 --assign_oetf srgb \
+                "assets/projects/mind-map/gallery/ktx2/$n.ktx2" "$f"
+        done
+
+      KEEP THE SOURCE IMAGES. They are the masters, they remain the fallback
+      path for devices where transcoding is unavailable, and prefetch uses
+      whichever set is active.
+
+   2. SELF-HOST THE BASIS TRANSCODER (two files, no build tooling):
+
+        mkdir -p assets/vendor/basis
+        curl -L -o assets/vendor/basis/basis_transcoder.js \
+          https://unpkg.com/three@0.160.0/examples/jsm/libs/basis/basis_transcoder.js
+        curl -L -o assets/vendor/basis/basis_transcoder.wasm \
+          https://unpkg.com/three@0.160.0/examples/jsm/libs/basis/basis_transcoder.wasm
+
+      The code probes for the local copy at startup and only falls back to the
+      CDN if it is missing, so this can be done at any time.
+
+   VERIFYING IT WORKED: the console logs `[scene3] KTX2 active` on the first
+   successful compressed load, and a summary line
+   `[scene3] tiles: N via KTX2, M via image fallback, K failed` when loading
+   completes. If you see 0 via KTX2, the files are not where ktx2Dir points.
+   ------------------------------------------------------------------------- */
+const MINDMAP = {
+    useKTX2: true,
+    ktx2Dir: 'assets/projects/mind-map/gallery/ktx2/',
+    transcoderPath: 'assets/vendor/basis/',
+    transcoderFallback: 'https://unpkg.com/three@0.160.0/examples/jsm/libs/basis/'
+};
+
+/* Probe once, at startup, off the critical path. Resolves to the local
+   transcoder when present and the CDN otherwise. */
+let resolvedTranscoderPath = MINDMAP.transcoderPath;
+const transcoderReady = fetch(MINDMAP.transcoderPath + 'basis_transcoder.js', { method: 'HEAD' })
+    .then(r => {
+        if (!r.ok) throw new Error(String(r.status));
+        console.info('[scene3] Basis transcoder: self-hosted');
+    })
+    .catch(() => {
+        resolvedTranscoderPath = MINDMAP.transcoderFallback;
+        console.info('[scene3] Basis transcoder: CDN fallback (assets/vendor/basis not found)');
+    });
+
 const Scene3 = (() => {
     const MM_FOV = 60;
+    const GLOBE_RADIUS = 2.4;
+    const TILE = 0.78;
+
     const container3 = document.getElementById('mindmap-canvas-container');
     const loadingEl = document.getElementById('mindmap-loading');
 
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0xCCCCCC, 0.03);
-    const camera = new THREE.PerspectiveCamera(MM_FOV, V.aspect, 0.1, 1000);
-
-    const rendererMM = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    rendererMM.setSize(V.width, V.height, false);
-    rendererMM.domElement.style.width = '100%';
-    rendererMM.domElement.style.height = '100%';
-    Governor.register('scene3', (r) => rendererMM.setPixelRatio(r));
-    container3.appendChild(rendererMM.domElement);
-    guardContext(rendererMM, 'scene3', () => {
-        textures.forEach(t => { if (t) t.needsUpdate = true; });
-    });
-
-    const controls = new OrbitControls(camera, rendererMM.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.enablePan = false;
-    controls.minDistance = 4;
-    controls.maxDistance = 20;
-
-    const GLOBE_RADIUS = 2.4;
-    const TILE = 0.78;
-    const globe = new THREE.Group();
-    /* Whole-sphere flip: images were upside down until the device itself was
-       physically turned over, i.e. a 180° roll around the viewing axis. A
-       single rotation on the parent group flips every tile's position and
-       orientation together, so the existing Fibonacci-sphere arrangement and
-       each tile's own lookAt/placement logic are completely untouched. */
-    globe.rotation.z = Math.PI;
-    globe.updateMatrixWorld(true);
-    scene.add(globe);
-
-    const corner = TILE * 0.08;
-    const shape = new THREE.Shape();
-    shape.moveTo(0, corner); shape.lineTo(0, TILE - corner); shape.quadraticCurveTo(0, TILE, corner, TILE);
-    shape.lineTo(TILE - corner, TILE); shape.quadraticCurveTo(TILE, TILE, TILE, TILE - corner);
-    shape.lineTo(TILE, corner); shape.quadraticCurveTo(TILE, 0, TILE - corner, 0);
-    shape.lineTo(corner, 0); shape.quadraticCurveTo(0, 0, 0, corner);
-
-    const tileGeo = new THREE.ShapeGeometry(shape);
-    const uv = tileGeo.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / TILE, uv.getY(i) / TILE);
-    tileGeo.center();
-
-    const imagePaths = [
+    const imageFiles = [
         "1.jpeg","2.jpeg","3.png","4.jpeg","5.jpeg","6.jpeg","7.png","8.jpeg","9.jpeg","10.jpeg",
         "11.jpeg","12.jpeg","13.jpeg","14.png","15.png","16.jpeg","17.jpeg","18.jpeg","19.jpeg","20.jpeg",
         "21.JPG","22.JPG","23.JPG","24.JPG","25.jpeg","26.jpeg","27.jpeg","28.jpeg","29.jpeg","30.jpeg",
@@ -2936,16 +3332,46 @@ const Scene3 = (() => {
         "51.jpeg","52.jpeg","53.jpeg","54.jpeg","55.jpeg","56.jpeg","57.jpeg","58.jpeg","59.jpeg","60.jpeg",
         "61.jpeg","62.jpeg","63.jpeg","64.jpeg","65.jpeg","66.png","67.jpeg","68.jpeg","69.jpeg","70.jpeg",
         "71.jpeg","72.jpeg","73.jpeg","74.jpeg","75.jpeg","76.jpeg"
-    ].map(f => `assets/projects/mind-map/gallery/${f}`);
-
+    ];
+    const imagePaths = imageFiles.map(f => `assets/projects/mind-map/gallery/${f}`);
+    const ktx2Paths = imageFiles.map(f => `${MINDMAP.ktx2Dir}${f.replace(/\.[^.]+$/, '')}.ktx2`);
     const N = imagePaths.length;
-    const textures = new Array(N);
-    const tiles = [];
-    let loadedCount = 0;
-    let started = false;
-    let built = false;
 
-    /* Preallocated scratch — the old loop allocated ~230 Vector3s per frame. */
+    /* Scene graph objects that are cheap and stateless live here; anything
+       holding GPU memory is created in mount(). */
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0xCCCCCC, 0.03);
+    const camera = new THREE.PerspectiveCamera(MM_FOV, V.aspect, 0.1, 1000);
+
+    let rendererMM = null;
+    let controls = null;
+    let ktx2Loader = null;
+    let glGuard = null;
+    let globe = null;
+    let hitSphere = null;
+    let tileGeo = null;
+    let unsubViewport = null;
+
+    const textures = new Array(N);
+    let tiles = [];
+    let uploadQueue = [];
+    let uploadedCount = 0;
+    let failedCount = 0;
+    let ktx2Hits = 0, ktx2Misses = 0, ktx2Errors = 0, ktx2Disabled = false;
+    let revealed = false;
+    let revealTween = null;
+    let revealTimeout = null;
+    let mounted = false;
+    let loadStarted = false;
+    let prefetched = false;
+
+    const TILE_OPACITY = 0.95;
+    /* Never wait forever on a stalled request. */
+    const REVEAL_HARD_TIMEOUT_MS = 25000;
+
+    const TILE_PX = LOW_POWER ? 256 : 512;
+
+    /* Preallocated scratch */
     const _target = new THREE.Vector3();
     const _push = new THREE.Vector3();
     const _scale = new THREE.Vector3();
@@ -2954,89 +3380,46 @@ const Scene3 = (() => {
     const mouseMM = new THREE.Vector2(-999, -999);
     let isHovering = false, isPointerDown = false, holdFactor = 0;
 
-    const hitSphere = new THREE.Mesh(
-        new THREE.SphereGeometry(GLOBE_RADIUS, 32, 32),
-        new THREE.MeshBasicMaterial({ visible: false })
-    );
-    globe.add(hitSphere);
+    function makeTileGeometry() {
+        const corner = TILE * 0.08;
+        const shape = new THREE.Shape();
+        shape.moveTo(0, corner); shape.lineTo(0, TILE - corner); shape.quadraticCurveTo(0, TILE, corner, TILE);
+        shape.lineTo(TILE - corner, TILE); shape.quadraticCurveTo(TILE, TILE, TILE, TILE - corner);
+        shape.lineTo(TILE, corner); shape.quadraticCurveTo(TILE, 0, TILE - corner, 0);
+        shape.lineTo(corner, 0); shape.quadraticCurveTo(0, 0, 0, corner);
 
-    function build() {
-        if (built) return;
-        built = true;
-        for (let i = 0; i < N; i++) {
-            const tex = textures[i];
-            const material = new THREE.MeshBasicMaterial({
-                map: tex, color: tex ? 0xffffff : 0x888888,
-                side: THREE.DoubleSide, transparent: true, opacity: 0.95
-            });
-            const mesh = new THREE.Mesh(tileGeo, material);
-            const phi = Math.acos(1 - 2 * (i + 0.5) / N);
-            const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
-            const x = GLOBE_RADIUS * Math.cos(theta) * Math.sin(phi);
-            const y = GLOBE_RADIUS * Math.sin(theta) * Math.sin(phi);
-            const z = GLOBE_RADIUS * Math.cos(phi);
-            mesh.position.set(x, y, z);
-            /* lookAt toward the centre means the tile's textured +Z front
-               faces outward — toward the viewer standing outside the sphere.
-               The globe group's 180° rotation (applied above) keeps every
-               tile upright. Positions, spacing, and the Fibonacci layout are
-               completely unchanged. */
-            mesh.lookAt(0, 0, 0);
-            globe.add(mesh);
-            tiles.push({
-                mesh,
-                base: new THREE.Vector3(x, y, z),
-                dir: new THREE.Vector3(x, y, z).normalize(),
-                phase: (i % 3) * (Math.PI * 0.666)
-            });
-        }
-        loadingEl.style.opacity = 0;
+        const geo = new THREE.ShapeGeometry(shape);
+        const uv = geo.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / TILE, uv.getY(i) / TILE);
+        geo.center();
+        return geo;
     }
 
-    function onOne() {
-        if (++loadedCount === N) build();
-    }
-
-    /* ----------------------------------------------------------------------
-       TEXTURE BUDGET — this is the crash fix.
-
-       Phase 1 uploaded all 76 images at full source resolution as RGBA8 plus
-       mipmaps. At 2000x1500 that is ~16MB each, so ~1.2GB of GPU memory —
-       far past what mobile Safari will allow, which is why the page died and
-       needed a reload.
-
-       These tiles render at roughly 90-120 CSS px on screen. TILE_PX is
-       generously above that, and the whole set now costs:
-
-           512px -> 76 x 1.4MB  ~= 106MB
-           256px -> 76 x 0.35MB ~=  26MB
-
-       (A texture atlas was considered and rejected: 76 tiles at 256px need
-       two 2048x2048 atlases = 128 slots, so ~40% of the memory would be
-       padding — more bytes than the 76 individual textures, to save draw
-       calls that were never the bottleneck.)
-
-       The geometry is a square with 0..1 UVs, so images are already squashed
-       to square; resizing to a square bitmap preserves the existing look.
-       ---------------------------------------------------------------------- */
-    const TILE_PX = LOW_POWER ? 256 : 512;
-    const maxAniso = rendererMM.capabilities.getMaxAnisotropy();
-
-    function makeTexture(source) {
-        const tex = new THREE.Texture(source);
+    /* ---------- texture creation ---------- */
+    function finishTexture(tex) {
         tex.colorSpace = THREE.SRGBColorSpace;
-        tex.generateMipmaps = true;
-        tex.minFilter = THREE.LinearMipmapLinearFilter;
         tex.magFilter = THREE.LinearFilter;
-        /* Tiles sit at grazing angles on a sphere; at anisotropy 1 they blur
-           badly around the limb. */
-        tex.anisotropy = Math.min(8, maxAniso);
+        tex.anisotropy = Math.min(8, rendererMM ? rendererMM.capabilities.getMaxAnisotropy() : 1);
         tex.needsUpdate = true;
         return tex;
     }
 
-    /* Canvas fallback for browsers without createImageBitmap resize options. */
-    function downscaleViaCanvas(path) {
+    function makeBitmapTexture(source) {
+        const tex = new THREE.Texture(source);
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        /* FIX 4 — release the CPU-side decoded copy the moment the GPU has it.
+           three.js never closes ImageBitmaps for you; the old code therefore
+           retained ~80MB of decoded bitmaps for the whole session on top of
+           the GPU copies. */
+        tex.onUpdate = () => {
+            if (source && typeof source.close === 'function') source.close();
+            tex.onUpdate = null;
+        };
+        return finishTexture(tex);
+    }
+
+    function downscaleViaCanvas(path, signal) {
         return new Promise((res, rej) => {
             const img = new Image();
             img.decoding = 'async';
@@ -3046,17 +3429,18 @@ const Scene3 = (() => {
                 const ctx = c.getContext('2d');
                 ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(img, 0, 0, TILE_PX, TILE_PX);
-                res(makeTexture(c));
+                res(makeBitmapTexture(c));
             };
             img.onerror = rej;
+            if (signal) signal.addEventListener('abort', () => { img.src = ''; rej(new Error('aborted')); });
             img.src = path;
         });
     }
 
-    async function loadTile(path) {
+    async function loadBitmapTile(path, signal) {
         if (typeof createImageBitmap === 'function') {
             try {
-                const res = await fetch(path, { cache: 'force-cache' });
+                const res = await fetch(path, { cache: 'force-cache', signal });
                 if (!res.ok) throw new Error(res.status);
                 const blob = await res.blob();
                 const bmp = await createImageBitmap(blob, {
@@ -3064,76 +3448,361 @@ const Scene3 = (() => {
                     resizeHeight: TILE_PX,
                     resizeQuality: 'high'
                 });
-                return makeTexture(bmp);
+                return makeBitmapTexture(bmp);
             } catch (e) {
-                /* Older Safari ignores or rejects the resize options. */
+                if (e && e.name === 'AbortError') throw e;
             }
         }
-        return downscaleViaCanvas(path);
+        return downscaleViaCanvas(path, signal);
     }
 
-    function ensureLoaded() {
-        if (started) return;
-        started = true;
+    async function loadTile(i, signal) {
+        if (ktx2Loader && !ktx2Disabled) {
+            try {
+                const tex = await ktx2Loader.loadAsync(ktx2Paths[i]);
+                if (ktx2Hits === 0) console.info('[scene3] KTX2 active — compressed textures in use.');
+                ktx2Hits += 1;
+                return finishTexture(tex);
+            } catch (e) {
+                /* .ktx2 not generated yet, or transcoding unavailable. Fall
+                   back for this tile — and if the first few all fail, stop
+                   trying so we don't fire 76 doomed requests. */
+                ktx2Errors += 1;
+                if (ktx2Errors >= 3 && ktx2Hits === 0 && !ktx2Disabled) {
+                    ktx2Disabled = true;
+                    console.warn('[scene3] KTX2 unavailable after 3 attempts — using image fallback for all tiles. Have the .ktx2 files been generated?');
+                }
+            }
+        }
+        ktx2Misses += 1;
+        return loadBitmapTile(imagePaths[i], signal);
+    }
+
+    /* ---------- globe construction ---------- */
+    function buildGlobe() {
+        globe = new THREE.Group();
+        /* Whole-sphere flip: a single 180° roll keeps every tile upright
+           without touching the Fibonacci placement. */
+        globe.rotation.z = Math.PI;
+        /* Hidden until every texture is uploaded. The user must never see
+           placeholder tiles or images popping in one at a time. */
+        globe.visible = false;
+        globe.scale.setScalar(0.92);
+        globe.updateMatrixWorld(true);
+        scene.add(globe);
+
+        tileGeo = makeTileGeometry();
+
+        hitSphere = new THREE.Mesh(
+            new THREE.SphereGeometry(GLOBE_RADIUS, 32, 32),
+            new THREE.MeshBasicMaterial({ visible: false })
+        );
+        globe.add(hitSphere);
+
+        tiles = [];
+        for (let i = 0; i < N; i++) {
+            const material = new THREE.MeshBasicMaterial({
+                map: null, color: 0xffffff,
+                side: THREE.DoubleSide, transparent: true,
+                /* Starts fully transparent; the reveal tween raises it. */
+                opacity: 0
+            });
+            const mesh = new THREE.Mesh(tileGeo, material);
+            const phi = Math.acos(1 - 2 * (i + 0.5) / N);
+            const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+            const x = GLOBE_RADIUS * Math.cos(theta) * Math.sin(phi);
+            const y = GLOBE_RADIUS * Math.sin(theta) * Math.sin(phi);
+            const z = GLOBE_RADIUS * Math.cos(phi);
+            mesh.position.set(x, y, z);
+            mesh.lookAt(0, 0, 0);
+            globe.add(mesh);
+            tiles.push({
+                mesh,
+                base: new THREE.Vector3(x, y, z),
+                dir: new THREE.Vector3(x, y, z).normalize(),
+                phase: (i % 3) * (Math.PI * 0.666)
+            });
+        }
+    }
+
+    /* ---------- reveal ----------------------------------------------------
+       Loader -> fully prepared globe -> smooth reveal. Uploads happen while
+       the globe is invisible, so spreading them over frames (which is what
+       keeps the allocation from spiking) costs nothing visually. */
+    function reveal(reason) {
+        if (revealed || !mounted || !globe) return;
+        revealed = true;
+        clearTimeout(revealTimeout);
+        revealTimeout = null;
+
+        console.info(
+            `[scene3] tiles: ${ktx2Hits} via KTX2, ${ktx2Misses} via image fallback, ${failedCount} failed` +
+            (reason ? ` (${reason})` : '')
+        );
+
+        loadingEl.style.opacity = 0;
+        globe.visible = true;
+
+        if (REDUCED_MOTION) {
+            globe.scale.setScalar(1);
+            tiles.forEach(t => { t.mesh.material.opacity = TILE_OPACITY; });
+            return;
+        }
+
+        const proxy = { v: 0 };
+        revealTween = gsap.to(proxy, {
+            v: 1,
+            duration: 0.9,
+            ease: 'power3.out',
+            onUpdate: () => {
+                if (!globe) return;
+                globe.scale.setScalar(0.92 + 0.08 * proxy.v);
+                const o = TILE_OPACITY * proxy.v;
+                for (let i = 0; i < tiles.length; i++) tiles[i].mesh.material.opacity = o;
+            },
+            onComplete: () => { revealTween = null; }
+        });
+    }
+
+    /* ---------- loading ---------- */
+    async function startLoading() {
+        if (loadStarted) return;
+        loadStarted = true;
+
+        /* Wait for the transcoder probe so the loader is created against the
+           path that actually exists. This is a HEAD request issued at page
+           start, so it has almost always settled by now. */
+        if (MINDMAP.useKTX2) {
+            await transcoderReady;
+            if (!mounted) return;
+            try {
+                ktx2Loader = new KTX2Loader()
+                    .setTranscoderPath(resolvedTranscoderPath)
+                    .detectSupport(rendererMM);
+            } catch (e) {
+                console.warn('[scene3] KTX2Loader unavailable, using image fallback.', e);
+                ktx2Loader = null;
+            }
+        }
+
+        const signal = Assets.signal;
         let i = 0;
+
         function step() {
             const batch = [];
             let n = 0;
             while (n < 3 && i < N) {
                 const idx = i;
                 batch.push(
-                    loadTile(imagePaths[idx])
-                        .then(tex => { textures[idx] = tex; })
-                        .catch(() => { textures[idx] = null; })
-                        .then(onOne)
+                    loadTile(idx, signal)
+                        .then(tex => { textures[idx] = tex; uploadQueue.push(idx); })
+                        .catch(() => { textures[idx] = null; failedCount += 1; uploadedCount += 1; })
                 );
                 i++; n++;
             }
-            Promise.all(batch).then(() => { if (i < N) requestIdle(step); });
+            Promise.all(batch).then(() => {
+                if (i < N && mounted) Idle.run(step);
+                else if (mounted && uploadedCount >= N) reveal();
+            });
         }
-        requestIdle(step);
+        Idle.run(step);
     }
 
-    /* Camera distance: continuous fit against the globe's real extent, so a
-       narrow portrait window pulls back and a wide one moves in, with no
-       linear width mapping and no clamped endpoints. */
+    /* FIX 5 — incremental GPU upload.
+       Previously all 76 textures were uploaded and mipmapped inside the FIRST
+       frame of scene 3: one enormous frame plus a single ~106MB allocation
+       request at the worst possible moment. Now at most UPLOADS_PER_FRAME are
+       pushed to the GPU per frame via initTexture(), spreading the cost and
+       the allocation over ~20 frames. */
+    const UPLOADS_PER_FRAME = 4;
+
+    function pumpUploads() {
+        if (!rendererMM || !uploadQueue.length) return;
+        let budget = UPLOADS_PER_FRAME;
+        while (budget-- > 0 && uploadQueue.length) {
+            const idx = uploadQueue.shift();
+            const tex = textures[idx];
+            if (!tex) { failedCount += 1; uploadedCount += 1; continue; }
+            try { rendererMM.initTexture(tex); } catch (e) { /* non-fatal */ }
+            const t = tiles[idx];
+            if (t) {
+                t.mesh.material.map = tex;
+                t.mesh.material.needsUpdate = true;
+            }
+            uploadedCount += 1;
+        }
+        /* Everything accounted for (uploaded or failed) — show the globe. */
+        if (uploadedCount >= N) reveal();
+    }
+
+    /* ---------- layout ---------- */
     function layout() {
         camera.aspect = V.aspect;
         camera.updateProjectionMatrix();
-        rendererMM.setPixelRatio(Governor.ratioFor('scene3'));
+        if (rendererMM) {
+            rendererMM.setPixelRatio(Governor.ratioFor());
+            rendererMM.setSize(V.width, V.height, false);
+            rendererMM.domElement.style.width = '100%';
+            rendererMM.domElement.style.height = '100%';
+        }
+
+        const extent = 4.33;
+        const halfTan = Math.tan(MM_FOV * Math.PI / 360);
+        const shapeFactor = Math.pow(Math.min(V.aspect, 1), 0.375);
+        const minD = controls ? controls.minDistance : 4;
+        const maxD = controls ? controls.maxDistance : 20;
+        const z = clamp(extent / (halfTan * shapeFactor), minD, maxD);
+        camera.position.set(0, 0, z);
+        if (controls) controls.update();
+    }
+
+    /* ---------- mount / unmount ---------- */
+    function mount() {
+        if (mounted) return;
+        mounted = true;
+
+        loadingEl.style.opacity = 1;
+        uploadedCount = 0;
+        failedCount = 0;
+        ktx2Hits = ktx2Misses = ktx2Errors = 0;
+        ktx2Disabled = false;
+        revealed = false;
+        uploadQueue = [];
+
+        rendererMM = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
         rendererMM.setSize(V.width, V.height, false);
         rendererMM.domElement.style.width = '100%';
         rendererMM.domElement.style.height = '100%';
+        container3.appendChild(rendererMM.domElement);
+        Governor.register('scene3', 3, (r) => rendererMM && rendererMM.setPixelRatio(r));
+        glGuard = guardContext(rendererMM, 'scene3', 3, () => {
+            textures.forEach(t => { if (t) t.needsUpdate = true; });
+        });
 
-        const extent = 4.33;                       // globe radius + protrusion headroom
-        const halfTan = Math.tan(MM_FOV * Math.PI / 360);
-        const shapeFactor = Math.pow(Math.min(V.aspect, 1), 0.375);
-        const z = clamp(extent / (halfTan * shapeFactor), controls.minDistance, controls.maxDistance);
-        camera.position.set(0, 0, z);
-        controls.update();
+        controls = new OrbitControls(camera, rendererMM.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enablePan = false;
+        controls.minDistance = 4;
+        controls.maxDistance = 20;
+
+        buildGlobe();
+        layout();
+        unsubViewport = V.onChange(layout);
+
+        /* If a handful of requests stall, reveal what we have rather than
+           leaving the user on a loader forever. */
+        revealTimeout = setTimeout(() => {
+            if (!revealed) reveal(`timeout, ${uploadedCount}/${N} ready`);
+        }, REVEAL_HARD_TIMEOUT_MS);
+
+        startLoading();
     }
 
+    function unmount() {
+        if (!mounted) return;
+        mounted = false;
+
+        /* Tell the context guard this teardown is intentional BEFORE anything
+           can fire webglcontextlost. Without this, the deliberate
+           loseContext() below raised the "graphics stopped responding"
+           overlay five seconds later, over whatever scene the user had
+           navigated to by then. */
+        if (glGuard) { glGuard.markDisposing(); }
+
+        clearTimeout(revealTimeout);
+        revealTimeout = null;
+        if (revealTween) { revealTween.kill(); revealTween = null; }
+        revealed = false;
+
+        if (unsubViewport) { unsubViewport(); unsubViewport = null; }
+        Governor.unregister('scene3');
+
+        if (controls) { controls.dispose(); controls = null; }
+
+        textures.forEach((t, i) => { if (t) t.dispose(); textures[i] = undefined; });
+        tiles.forEach(t => t.mesh.material.dispose());
+        if (hitSphere) { hitSphere.geometry.dispose(); hitSphere.material.dispose(); }
+        if (tileGeo) { tileGeo.dispose(); tileGeo = null; }
+        if (globe) { scene.remove(globe); globe = null; }
+        tiles = [];
+        uploadQueue = [];
+        uploadedCount = 0;
+        failedCount = 0;
+        hitSphere = null;
+
+        if (ktx2Loader) { ktx2Loader.dispose(); ktx2Loader = null; }
+
+        if (rendererMM) {
+            if (rendererMM.domElement.parentNode) {
+                rendererMM.domElement.parentNode.removeChild(rendererMM.domElement);
+            }
+            /* Remove the listeners entirely, then grab the context BEFORE
+               dispose(), then drop it explicitly so the driver reclaims the
+               framebuffer immediately rather than at GC time. */
+            if (glGuard) { glGuard.destroy(); glGuard = null; }
+            let lose = null;
+            try { lose = rendererMM.getContext().getExtension('WEBGL_lose_context'); } catch (e) {}
+            rendererMM.dispose();
+            if (lose) lose.loseContext();
+            rendererMM = null;
+        }
+        glGuard = null;
+
+        /* Reset the flags so the scene can be rebuilt on the next visit. */
+        loadStarted = false;
+        isHovering = false;
+        isPointerDown = false;
+        holdFactor = 0;
+        mouseMM.set(-999, -999);
+    }
+
+    /* Network-only warm-up. No GL context, no decode, no GPU memory. */
+    function prefetch() {
+        if (prefetched) return;
+        prefetched = true;
+        const list = MINDMAP.useKTX2 ? ktx2Paths : imagePaths;
+        let i = 0;
+        const step = () => {
+            if (i >= list.length) return;
+            const batch = [];
+            for (let n = 0; n < 3 && i < list.length; n++, i++) {
+                batch.push(fetch(list[i], { cache: 'force-cache', signal: Assets.signal }).catch(() => {}));
+            }
+            Promise.all(batch).then(() => Idle.run(step));
+        };
+        Idle.run(step);
+    }
+
+    /* ---------- frame ---------- */
     function frame(dt, time) {
+        if (!mounted || !rendererMM) return;
+
+        pumpUploads();
         controls.update();
+
+        /* Nothing interactive until the globe is actually on screen. */
+        if (!revealed) {
+            rendererMM.render(scene, camera);
+            return;
+        }
 
         const targetHold = isPointerDown ? 1 : 0;
         holdFactor += (targetHold - holdFactor) * (isPointerDown ? 0.25 : 0.035);
 
-        raycasterMM.setFromCamera(mouseMM, camera);
-        const hits = raycasterMM.intersectObject(hitSphere);
-        if (hits.length) {
-            /* hits[0].point is world space; t.base/t.dir are local space
-               (raw Fibonacci-sphere coordinates, never transformed). Those
-               matched by coincidence when the group had no rotation. Now
-               that the whole globe is flipped 180°, the hit point must be
-               brought into the group's local space before it's compared
-               against per-tile local vectors, or the push/hover effect would
-               land 180° away from the actual touch point. */
-            _hitPoint.copy(hits[0].point);
-            globe.worldToLocal(_hitPoint);
-            isHovering = true;
-        } else {
-            isHovering = false;
+        if (hitSphere) {
+            raycasterMM.setFromCamera(mouseMM, camera);
+            const hits = raycasterMM.intersectObject(hitSphere);
+            if (hits.length) {
+                /* hits[0].point is world space; t.base/t.dir are local. The
+                   globe carries a 180° roll, so the hit must be converted or
+                   the push lands on the opposite side of the sphere. */
+                _hitPoint.copy(hits[0].point);
+                globe.worldToLocal(_hitPoint);
+                isHovering = true;
+            } else {
+                isHovering = false;
+            }
         }
 
         const protrusion = mix(1.45, 1.0, V.t);
@@ -3176,26 +3845,19 @@ const Scene3 = (() => {
         rendererMM.render(scene, camera);
     }
 
-    function release() {
-        textures.forEach(t => t && t.dispose());
-        tiles.forEach(t => t.mesh.material.dispose());
-        tileGeo.dispose();
-        rendererMM.dispose();
-    }
-
-    layout();
-    V.onChange(layout);
     Loop.register(3, frame);
 
     return {
-        ensureLoaded,
-        prefetch: ensureLoaded,
-        release,
+        mount,
+        unmount,
+        prefetch,
+        get mounted() { return mounted; },
         setPointer(x, y) {
+            if (!mounted) return;
             mouseMM.x = (x / V.width) * 2 - 1;
             mouseMM.y = -(y / V.height) * 2 + 1;
         },
-        setPointerDown(v) { isPointerDown = v; },
+        setPointerDown(v) { if (mounted) isPointerDown = v; },
         clearPointer() { isPointerDown = false; mouseMM.set(-999, -999); }
     };
 })();
@@ -3203,20 +3865,39 @@ const Scene3 = (() => {
 /* ==========================================================================
    9. ROUTING
    ========================================================================== */
+/* ==========================================================================
+   9. ROUTING
+   --------------------------------------------------------------------------
+   TRANSITION TOKENS. Every scene change used to be a chain of uncancellable
+   setTimeouts (1050ms folder open -> 800ms scene fade -> 800ms return fade ->
+   100ms force field). Nothing held a handle, so a timer scheduled by one
+   transition could fire in the middle of the next one and overwrite state
+   that had already moved on. Now each transition takes a monotonic id and
+   every deferred callback bails if a newer transition has started.
+   ========================================================================== */
+let transitionId = 0;
+function beginTransition() { return ++transitionId; }
+function isCurrentTransition(id) { return id === transitionId; }
+
 const sceneOneEl = document.getElementById('scene-one');
 const sceneTwoEl = document.getElementById('scene-two');
 const sceneThreeEl = document.getElementById('scene-three');
 const backBtn2 = document.getElementById('scene-two-back-btn');
 const backBtn3 = document.getElementById('scene-three-back-btn');
 
-function openCollectionFromFolder(projectIndex) {
+function openCollectionFromFolder(projectIndex, id) {
+    if (id !== undefined && !isCurrentTransition(id)) return;
+    const tid = id !== undefined ? id : beginTransition();
+
     sceneOneEl.style.opacity = '0';
     sceneOneEl.style.pointerEvents = 'none';
 
     if (projectIndex === 99) {
         Router.scene = 3;
-        Scene3.ensureLoaded();
+        Scene3.mount();
+        Governor.refresh('scene3');
         setTimeout(() => {
+            if (!isCurrentTransition(tid)) return;
             sceneThreeEl.style.opacity = '1';
             sceneThreeEl.style.pointerEvents = 'auto';
             backBtn3.classList.add('active');
@@ -3225,6 +3906,7 @@ function openCollectionFromFolder(projectIndex) {
     } else {
         Router.scene = 2;
         setTimeout(() => {
+            if (!isCurrentTransition(tid)) return;
             sceneTwoEl.style.opacity = '1';
             sceneTwoEl.style.pointerEvents = 'auto';
             backBtn2.classList.add('active');
@@ -3233,7 +3915,49 @@ function openCollectionFromFolder(projectIndex) {
     }
 }
 
+/* Explicitly ASSERT the homepage's post-return state instead of assuming the
+   pre-navigation values survived.
+
+   The old version set only VirtualScroll.raw and relied on
+   targetScrollProgress / displayScrollProgress / lastCarouselEntrance /
+   entranceState still holding their pre-navigation values. Anything that
+   perturbed them in between — a viewport change firing layoutScene1(), a
+   home-button click near a transition boundary, input dropped while
+   transitionState !== 'IDLE' — left the scene interpolating back toward the
+   particle orb instead of the folder carousel. */
+function restoreCarouselState() {
+    VirtualScroll.max = V.height * 1.5;
+    VirtualScroll.raw = VirtualScroll.max;
+
+    targetScrollProgress = 1;
+    displayScrollProgress = 1;
+    lastCarouselEntrance = 1;
+
+    entranceState.posY = 0;
+    entranceState.targetY = 0;
+    entranceState.velY = 0;
+
+    isSystemLocked = false;
+    wasScrolled = true;
+
+    /* Snap rotation to a whole folder so we never land between detents. */
+    targetRotation = Math.round(targetRotation / angleStep) * angleStep;
+    currentRotation = targetRotation;
+
+    carouselGroup.position.y = 0;
+
+    /* Uniforms that are normally driven by the scroll progress. */
+    clusterMaterial.uniforms.uBurnProgress.value = smoothstep(0.0, 0.5, 1);
+    clusterMaterial.uniforms.uClearProgress.value = 1;
+
+    scrollText.style.opacity = 0;
+    welcomeTitle.style.opacity = 0;
+}
+
 function returnToSceneOne() {
+    const tid = beginTransition();
+    const wasScene3 = Router.scene === 3;
+
     Router.scene = 1;
     if (S2.activeCluster !== -1) S2.close(true);
     resetMindMapTypewriter();
@@ -3246,14 +3970,22 @@ function returnToSceneOne() {
     backBtn2.classList.remove('active');
     backBtn3.classList.remove('active');
 
-    /* Land at fully-open so the first upward scroll reverses immediately. */
-    VirtualScroll.raw = VirtualScroll.max;
+    restoreCarouselState();
+    Governor.refresh('scene1');
 
     setTimeout(() => {
+        if (!isCurrentTransition(tid)) return;
         S2.unload();
+        /* Tear the mind map's context down only after it has fully faded, so
+           the user never sees the canvas vanish. */
+        if (wasScene3) Scene3.unmount();
         sceneOneEl.style.opacity = '1';
         sceneOneEl.style.pointerEvents = 'auto';
+        /* Re-assert: the 800ms fade is long enough for a resize to have
+           recomputed the entrance geometry from stale values. */
+        restoreCarouselState();
         setTimeout(() => {
+            if (!isCurrentTransition(tid)) return;
             Router.forceField = 0;
             triggerFolderClose();
         }, 100);
@@ -3270,82 +4002,122 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* ==========================================================================
-   10. INPUT
+   10. INPUT  (FIX 3 — scoped, mostly-passive listeners)
    --------------------------------------------------------------------------
-   Scene 1 uses virtual scroll (there is nothing real to scroll).
-   Scene 2's grid uses native scroll only — no custom wheel handler.
-   Scene 2's carousel uses custom deltas because it scrolls sideways.
+   The previous version registered `wheel` and `touchmove` on WINDOW with
+   { passive: false }. That tells the browser it must run JavaScript before it
+   can scroll ANYTHING — including #native-scroll-container, the compositor-
+   driven grid scroller built specifically to avoid main-thread involvement.
+   One global listener silently reintroduced the exact lag the Phase 2
+   architecture was designed to remove.
+
+   Now:
+     - Scene 1 (virtual scroll, needs preventDefault) -> #scene-one, non-passive.
+     - Scene 2 carousel (needs preventDefault)        -> #click-blocker,
+       which is display:none unless a carousel is open, so the grid scroller
+       never has a non-passive ancestor listener at all.
+     - Scene 3 (only reads coordinates)               -> #scene-three, PASSIVE.
    ========================================================================== */
+const blockerEl = document.getElementById('click-blocker');
+
+/* ---- Scene 1: wheel ---- */
 let wheelSnapTimeout;
-window.addEventListener('wheel', (e) => {
-    if (Router.scene === 1) {
-        e.preventDefault();
-        if (!isSystemLocked && transitionState === 'IDLE' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-            /* Trackpad swipe direction (new, confirmed correct — do not touch). */
-            targetRotation -= e.deltaX * 0.002;
-            hasSwiped = true;
-            clearTimeout(wheelSnapTimeout);
-            wheelSnapTimeout = setTimeout(() => {
-                targetRotation = Math.round(targetRotation / angleStep) * angleStep;
-            }, 150);
-            return;
-        }
-        applyVirtualScroll(e.deltaY);
-    } else if (Router.scene === 2 && S2.activeCluster !== -1) {
-        e.preventDefault();
-        /* Compact (touch) carousel scrolls vertically. Desktop carousel is
-           horizontal only — vertical wheel no longer navigates it. */
-        const delta = V.compact ? e.deltaY : e.deltaX;
-        S2.applyCarouselDelta(delta);
+sceneOneEl.addEventListener('wheel', (e) => {
+    if (Router.scene !== 1) return;
+    e.preventDefault();
+    if (!isSystemLocked && transitionState === 'IDLE' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        targetRotation -= e.deltaX * 0.002;
+        hasSwiped = true;
+        clearTimeout(wheelSnapTimeout);
+        wheelSnapTimeout = setTimeout(() => {
+            targetRotation = Math.round(targetRotation / angleStep) * angleStep;
+        }, 150);
+        return;
     }
-    /* Scene 2 grid: no branch. The scroll container handles it natively. */
+    applyVirtualScroll(e.deltaY);
 }, { passive: false });
 
+/* ---- Scene 2 carousel: wheel ----
+   Scoped to #click-blocker only, which fully covers the carousel area for
+   the entire open→carousel→closing lifetime — it's a sibling of #dom-layer
+   in the same stacking context with a higher z-index, so nothing inside
+   #dom-layer can ever receive a pointer/wheel event while the blocker is
+   active. (An earlier pass also attached this to #dom-layer to work around
+   a since-removed hover feature; that listener could never actually fire,
+   for the same reason, and has been dropped.) */
+function onCarouselWheel(e) {
+    if (Router.scene !== 2 || S2.activeCluster === -1) return;
+    e.preventDefault();
+    const delta = V.compact ? e.deltaY : e.deltaX;
+    S2.applyCarouselDelta(delta);
+}
+blockerEl.addEventListener('wheel', onCarouselWheel, { passive: false });
+
+/* ---- Scene 1: touch ---- */
 let touchStartX = 0, touchStartY = 0, touchIntent = null;
 
-window.addEventListener('touchstart', (e) => {
+sceneOneEl.addEventListener('touchstart', (e) => {
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
     touchIntent = null;
-    if (Router.scene === 3) {
-        hideInteractText();
-        Scene3.setPointerDown(true);
-        Scene3.setPointer(touchStartX, touchStartY);
-    }
 }, { passive: true });
 
-window.addEventListener('touchmove', (e) => {
+sceneOneEl.addEventListener('touchmove', (e) => {
+    if (Router.scene !== 1) return;
     const cx = e.touches[0].clientX;
     const cy = e.touches[0].clientY;
     const dx = touchStartX - cx;
     const dy = touchStartY - cy;
 
-    if (Router.scene === 1) {
-        e.preventDefault();
-        if (touchIntent === null) {
-            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 5) touchIntent = 'rotate';
-            else if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 5) touchIntent = 'scroll';
-        }
-        if (touchIntent === 'scroll') {
-            isDragging = false;
-            applyVirtualScroll(dy * mix(1.0, 1.5, V.t));
-            touchStartY = cy;
-            touchStartX = cx;
-        }
-    } else if (Router.scene === 2 && S2.activeCluster !== -1) {
-        e.preventDefault();
-        S2.applyCarouselDelta((V.compact ? dy : dx) * 2.0);
-        touchStartX = cx;
+    e.preventDefault();
+    if (touchIntent === null) {
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 5) touchIntent = 'rotate';
+        else if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 5) touchIntent = 'scroll';
+    }
+    if (touchIntent === 'scroll') {
+        isDragging = false;
+        applyVirtualScroll(dy * mix(1.0, 1.5, V.t));
         touchStartY = cy;
-    } else if (Router.scene === 3) {
-        Scene3.setPointer(cx, cy);
+        touchStartX = cx;
     }
 }, { passive: false });
 
-window.addEventListener('touchend', () => {
+/* ---- Scene 2 carousel: touch ---- */
+let carTouchX = 0, carTouchY = 0;
+
+blockerEl.addEventListener('touchstart', (e) => {
+    carTouchX = e.touches[0].clientX;
+    carTouchY = e.touches[0].clientY;
+}, { passive: true });
+
+blockerEl.addEventListener('touchmove', (e) => {
+    if (Router.scene !== 2 || S2.activeCluster === -1) return;
+    e.preventDefault();
+    const cx = e.touches[0].clientX;
+    const cy = e.touches[0].clientY;
+    S2.applyCarouselDelta((V.compact ? (carTouchY - cy) : (carTouchX - cx)) * 2.0);
+    carTouchX = cx;
+    carTouchY = cy;
+}, { passive: false });
+
+/* ---- Scene 3: touch (PASSIVE — OrbitControls handles its own gestures) ---- */
+sceneThreeEl.addEventListener('touchstart', (e) => {
+    if (Router.scene !== 3) return;
+    hideInteractText();
+    Scene3.setPointerDown(true);
+    Scene3.setPointer(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: true });
+
+sceneThreeEl.addEventListener('touchmove', (e) => {
+    if (Router.scene !== 3) return;
+    Scene3.setPointer(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: true });
+
+sceneThreeEl.addEventListener('touchend', () => {
     if (Router.scene === 3) Scene3.setPointerDown(false);
 }, { passive: true });
 
+/* ---- pointer (mouse / trackpad) ---- */
 function handlePointerDown(e) {
     if (Router.scene === 3) {
         hideInteractText();
@@ -3353,8 +4125,6 @@ function handlePointerDown(e) {
         Scene3.setPointer(e.clientX, e.clientY);
         return;
     }
-    /* Desktop image carousel: direct horizontal drag with mouse or trackpad.
-       Compact/touch keeps its own touch handlers; this is pointer-only. */
     if (Router.scene === 2 && S2.activeCluster !== -1 && !V.compact) {
         carouselDragging = true;
         carouselPrevX = e.clientX;
@@ -3371,8 +4141,6 @@ function handlePointerDown(e) {
 function handlePointerMove(e) {
     if (Router.scene === 3) { Scene3.setPointer(e.clientX, e.clientY); return; }
     if (carouselDragging && Router.scene === 2 && S2.activeCluster !== -1) {
-        /* Drag content-follows-cursor: moving the pointer left advances the
-           carousel, matching the horizontal swipe already in place. */
         S2.applyCarouselDelta(carouselPrevX - e.clientX);
         carouselPrevX = e.clientX;
         return;
@@ -3380,9 +4148,6 @@ function handlePointerMove(e) {
     if (Router.scene !== 1 || isSystemLocked || transitionState !== 'IDLE') return;
 
     if (isDragging) {
-        /* Reverted per request: drag now uses the original, pre-reversal
-           direction again. Swipe (above) keeps the new direction — the two
-           are intentionally not required to match. */
         dragVelocity = (e.clientX - previousX) * 0.004;
         targetRotation += dragVelocity;
         previousX = e.clientX;
@@ -3447,7 +4212,14 @@ window.addEventListener('pointerdown', handlePointerDown);
 window.addEventListener('pointermove', handlePointerMove);
 window.addEventListener('pointerup', handlePointerUp);
 window.addEventListener('pointercancel', handlePointerLeave);
-window.addEventListener('pointerout', handlePointerLeave);
+
+/* FIX 14 — `pointerout` on window fires every time the pointer crosses ANY
+   element boundary, so simply moving the cursor from a folder label onto the
+   canvas cancelled an in-progress drag and cleared the mind map's pointer.
+   A null relatedTarget means the pointer genuinely left the window. */
+window.addEventListener('pointerout', (e) => {
+    if (e.relatedTarget === null) handlePointerLeave();
+});
 
 /* ---- contact menu ---- */
 const contactItems = document.querySelectorAll('.contact-item');
@@ -3505,24 +4277,10 @@ renderer.compile(orbScene, orbCam);
 renderer.compile(carouselScene, carouselCam);
 Loop.start();
 
-setTimeout(() => {
-    let a = 0;
-    const id = setInterval(() => {
-        a += 0.02;
-        clusterMaterial.uniforms.uGlobalAlpha.value = smoothstep(0, 1, a);
-        if (a >= 1) clearInterval(id);
-    }, 30);
-}, 100);
+setTimeout(() => { bootFade.active = true; bootFade.t = 0; }, 100);
 
-/* TIER 1 — warm the cover images once Scene 1 is interactive. These twelve
-   are the only images on screen the instant a folder opens, so they are the
-   only ones worth decoding speculatively. Decoded RGBA is ~12MB per large
-   image, which is exactly why this list is short and why Tiers 2-3 warm the
-   HTTP cache without decoding. */
 setTimeout(() => {
     Assets.warmCovers();
-    /* TIER 3 — speculative backfill, lowest priority, well after the covers
-       and any intent-driven fetch have settled. Skipped on 2G / Save-Data. */
     setTimeout(() => Assets.backfill(), 4000);
 }, 1500);
 
@@ -3540,14 +4298,62 @@ setTimeout(() => {
     }, 800);
 }, 560);
 
-window.addEventListener('pagehide', () => {
-    Scene3.release();
+/* ==========================================================================
+   12. PAGE LIFECYCLE  (FIX 1)
+   --------------------------------------------------------------------------
+   The old code was:
+
+       window.addEventListener('pagehide', () => {
+           Scene3.release();
+           renderer.dispose();
+           envRT.dispose();
+       });
+
+   pagehide ALSO fires when the page enters the back/forward cache. On a back
+   navigation the JS heap and the rAF loop return intact — but both renderers'
+   program caches had been torn down and envRT (still referenced by
+   carouselScene.environment) had been disposed. The loop resumed rendering
+   into a dead renderer: black homepage. Scene3.release() additionally left
+   started/built = true, so the mind map could never rebuild.
+
+   Now teardown only runs when the document is genuinely being discarded
+   (event.persisted === false), and pageshow re-establishes anything that a
+   restore might have invalidated.
+   ========================================================================== */
+let disposed = false;
+
+function hardDispose() {
+    if (disposed) return;
+    disposed = true;
+    beginTransition();
+    Assets.cancelPending();
+    Scene3.unmount();
+    if (scene1Guard) scene1Guard.destroy();
     renderer.dispose();
-    envRT.dispose();
+    if (envRT) { envRT.dispose(); envRT = null; }
+}
+
+window.addEventListener('pagehide', (e) => {
+    if (e.persisted) {
+        /* Going into bfcache: keep everything, just stop speculative work. */
+        Assets.cancelPending();
+        return;
+    }
+    hardDispose();
+});
+
+window.addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    /* Restored from bfcache. Nothing was disposed, but the GPU may have
+       dropped resources while frozen and the viewport may have changed. */
+    V.invalidate();
+    V.refresh();
+    if (!envRT) rebuildFolderEnvironment();
+    layoutScene1();
 });
 
 /* Debug handle. Nothing in the app reads from window. */
-window.__portfolio = { Viewport: V, Router, S2, Scene3 };
+window.__portfolio = { Viewport: V, Router, S2, Scene3, Governor, Idle };
 </script>
 </body>
 </html>
