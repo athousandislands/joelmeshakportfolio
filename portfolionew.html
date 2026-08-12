@@ -321,7 +321,9 @@
             scrollbar-width: none;
         }
         #native-scroll-container::-webkit-scrollbar { display: none; }
-        #native-scroll-content { width: 100%; }
+        /* The grid lives INSIDE this element, so the compositor scrolls the
+           cards natively. No JS runs during a grid scroll. */
+        #native-scroll-content { width: 100%; position: relative; }
 
         #click-blocker {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -358,9 +360,18 @@
         .desktop-icon { width: 16px; height: 16px; }
         .mobile-icon { display: none; }
 
+        /* Cards are NOT permanently promoted. A permanent `will-change:
+           transform` makes the browser rasterize the layer once at its layout
+           size and then GPU-magnify it for any later scale() — which is what
+           made carousel images soft. Promotion is now applied only while a
+           card is actually animating, via .animating. */
         .dom-card {
             position: absolute; top: 0; left: 0; transform-origin: center center;
-            will-change: transform, opacity; display: flex; align-items: center; justify-content: center; overflow: hidden;
+            display: flex; align-items: center; justify-content: center; overflow: hidden;
+            backface-visibility: hidden;
+        }
+        .dom-card.animating {
+            will-change: transform, opacity;
         }
         .dom-card img, .dom-card video {
             width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none;
@@ -369,7 +380,7 @@
 
         .cluster-title {
             position: absolute; top: 0; left: 0; transform-origin: center center;
-            will-change: transform, opacity; color: #FFFFFF; font-size: 0.98rem; text-align: center;
+            color: #FFFFFF; font-size: 0.98rem; text-align: center;
             white-space: nowrap; letter-spacing: 0.01em;
         }
 
@@ -708,8 +719,105 @@ const Viewport = (() => {
 const V = Viewport;
 
 /* Render pixel ratio: capped, and capped harder on low-power devices. */
-function renderPixelRatio() {
-    return Math.min(V.dpr, LOW_POWER ? 1.25 : 1.5);
+/* ==========================================================================
+   1b. ADAPTIVE PIXEL RATIO GOVERNOR
+   --------------------------------------------------------------------------
+   Phase 1 used one global ceiling and dropped mobile to 1.25, which was a
+   quality regression made on a guess. Ceilings are now per scene, because the
+   scenes have completely different profiles:
+
+     Scene 1  fill-rate bound. 3060 transparent point sprites with depthWrite
+              off (heavy overdraw) plus MeshPhysicalMaterial transmission,
+              which makes three.js re-render the scene into a transmission
+              target every frame. Cost scales with DPR^2. Ceiling 1.5.
+     Scene 2  no canvas at all since Phase 1. Not applicable.
+     Scene 3  76 unlit textured quads. Trivial fill cost; its constraint is
+              texture memory, not resolution. Ceiling 2.0.
+
+   A runtime governor then scales both ceilings by a shared quality factor
+   measured from real frame times, so weak hardware degrades gracefully
+   instead of everyone paying for the worst device.
+   ========================================================================== */
+const DPR_CEILING = { scene1: 1.5, scene3: 2.0 };
+
+const Governor = (() => {
+    const consumers = [];          // { key, apply(ratio) }
+    const samples = new Float32Array(60);
+    let n = 0, filled = false;
+    let quality = 1.0;             // 0.6 .. 1.0
+    let lastChange = -Infinity;
+    let goodStreak = 0;
+
+    function ratioFor(key) {
+        const ceiling = DPR_CEILING[key] || 1.5;
+        return clamp(Math.min(V.dpr, ceiling) * quality, 1.0, ceiling);
+    }
+
+    function applyAll() {
+        consumers.forEach(c => c.apply(ratioFor(c.key)));
+    }
+
+    function p95() {
+        const len = filled ? samples.length : n;
+        if (len < 20) return 0;
+        const copy = Array.prototype.slice.call(samples, 0, len).sort((a, b) => a - b);
+        return copy[Math.floor(len * 0.95)];
+    }
+
+    return {
+        register(key, apply) {
+            consumers.push({ key, apply });
+            apply(ratioFor(key));
+        },
+        ratioFor,
+        sample(dt, time) {
+            samples[n++] = dt * 1000;
+            if (n >= samples.length) { n = 0; filled = true; }
+            if (!filled && n < 40) return;
+            if (time - lastChange < 1.0) return;   // setSize reallocates the
+                                                   // framebuffer; thrashing it
+                                                   // is worse than a low DPR
+            const worst = p95();
+            if (worst === 0) return;
+
+            if (worst > 20 && quality > 0.6) {
+                quality = Math.max(0.6, quality - 0.15);
+                goodStreak = 0;
+                lastChange = time;
+                applyAll();
+            } else if (worst < 11) {
+                goodStreak += 1;
+                if (goodStreak >= 3 && quality < 1.0) {
+                    quality = Math.min(1.0, quality + 0.15);
+                    lastChange = time;
+                    applyAll();
+                }
+            } else {
+                goodStreak = 0;
+            }
+        },
+        refresh: applyAll,
+        get quality() { return quality; }
+    };
+})();
+
+/* Attach loss/restore handling to any renderer. Without this, when the OS
+   reclaims the GPU context three.js silently stops drawing and the page
+   appears frozen until a manual reload. */
+function guardContext(renderer, label, onRestore) {
+    const canvas = renderer.domElement;
+    canvas.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();                 // required, or restore never fires
+        console.warn(`[${label}] WebGL context lost; awaiting restore.`);
+        document.documentElement.classList.add('gl-lost');
+    }, false);
+    canvas.addEventListener('webglcontextrestored', () => {
+        console.warn(`[${label}] WebGL context restored.`);
+        document.documentElement.classList.remove('gl-lost');
+        renderer.setPixelRatio(Governor.ratioFor(label));
+        renderer.setSize(V.width, V.height, false);
+        if (onRestore) onRestore();
+    }, false);
 }
 
 /* ==========================================================================
@@ -733,7 +841,7 @@ function visibleSizeAt(distance, fovDeg) {
 }
 
 /* ==========================================================================
-   3. SCHEDULER — ONE rAF LOOP FOR THE WHOLE APP
+   3. SCHEDULER — ONE rAF LOOP FOR THE whole APP
    ========================================================================== */
 const Router = {
     scene: 1,
@@ -751,6 +859,7 @@ const Loop = (() => {
         time += dt;
         const h = handlers[Router.scene];
         if (h) h(dt, time);
+        Governor.sample(dt, time);
     }
 
     return {
@@ -934,78 +1043,234 @@ function buildMediaData(project) {
    which removes the old race where carousel targets were computed from
    placeholder dimensions.
    ========================================================================== */
-const MediaDims = (() => {
-    const map = new Map();
-    const listeners = new Set();
+const requestIdle = window.requestIdleCallback || (cb => setTimeout(cb, 1));
 
-    function set(src, w, h) {
+/* --------------------------------------------------------------------------
+   ASSET MANIFEST
+   --------------------------------------------------------------------------
+   Generated by scripts/build-assets.mjs. Paste the output over the object
+   below (or fetch it — see Assets.loadManifest).
+
+     "path/to/original.jpg": { w: 3000, h: 2000, v: [640,1280,2048] }
+
+   `w`/`h` are the intrinsic dimensions, so layout no longer has to download
+   every image just to measure it. `v` lists which derivative widths exist.
+   Derivatives live at:  assets/_derived/<path-without-ext>-<width>.<fmt>
+
+   With an EMPTY manifest everything still works — Assets falls back to the
+   original file and measures on load, exactly as before. Nothing here is
+   load-bearing until you run the build script.
+   -------------------------------------------------------------------------- */
+const ASSET_MANIFEST = {
+    // "assets/projects/naivaa/collections/chokoleti/gallery/models.jpg":
+    //     { w: 3000, h: 2000, v: [640, 1280, 2048] },
+};
+
+const Assets = (() => {
+    const dims = new Map();          // src -> { w, h, aspect }
+    const listeners = new Set();
+    const requested = new Set();     // network-warmed
+    const decoded = new Set();       // fully decoded (bounded — see below)
+    let bestFormat = 'jpg';
+    let formatReady = false;
+
+    /* Format detection, once. */
+    (function detectFormat() {
+        const probe = (type, data) => new Promise(res => {
+            const img = new Image();
+            img.onload = () => res(img.width > 0);
+            img.onerror = () => res(false);
+            img.src = `data:${type};base64,${data}`;
+        });
+        probe('image/avif', 'AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADybWV0YQAAAAAAAAAoaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAGxpYmF2aWYAAAAADnBpdG0AAAAAAAEAAAAeaWxvYwAAAABEAAABAAEAAAABAAABGgAAAB0AAAAoaWluZgAAAAAAAQAAABppbmZlAgAAAAABAABhdjAxQ29sb3IAAAAAamlwcnAAAABLaXBjbwAAABRpc3BlAAAAAAAAAAEAAAABAAAAEHBpeGkAAAAAAwgICAAAAAxhdjFDgQAMAAAAABNjb2xybmNseAACAAIABoAAAAAXaXBtYQAAAAAAAAABAAEEAQKDBAAAACVtZGF0EgAKCBgABogQEDQgMgkQAAAAB8dSLfI=')
+            .then(ok => { if (ok) { bestFormat = 'avif'; return true; } return probe('image/webp', 'UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA=='); })
+            .then(ok => { if (ok === true && bestFormat !== 'avif') bestFormat = 'webp'; })
+            .then(() => { formatReady = true; });
+    })();
+
+    function stripExt(path) {
+        const i = path.lastIndexOf('.');
+        return i === -1 ? path : path.slice(0, i);
+    }
+
+    /* Pick the smallest derivative that still covers the display size at the
+       current device pixel ratio. This is what actually fixes sharpness:
+       we stop upscaling a small file and stop shipping a 3000px original to
+       a phone. */
+    function urlFor(src, displayCssPx) {
+        const entry = ASSET_MANIFEST[src];
+        if (!entry || !entry.v || !entry.v.length) return src;
+        /* Until format probing resolves we cannot know the extension, so
+           serve the original rather than guess a URL that may 404. */
+        if (!formatReady) return src;
+        const needed = Math.ceil((displayCssPx || 0) * Math.min(V.dpr, 2));
+        let pick = entry.v[entry.v.length - 1];
+        for (let i = 0; i < entry.v.length; i++) {
+            if (entry.v[i] >= needed) { pick = entry.v[i]; break; }
+        }
+        if (pick >= entry.w) return src;   // derivative would be an upscale
+        return `assets/_derived/${stripExt(src)}-${pick}.${bestFormat}`;
+    }
+
+    function setDims(src, w, h) {
         if (!w || !h) return;
-        const prev = map.get(src);
+        const prev = dims.get(src);
         if (prev && prev.w === w && prev.h === h) return;
-        map.set(src, { w, h, aspect: w / h });
+        dims.set(src, { w, h, aspect: w / h });
         listeners.forEach(fn => fn(src));
     }
 
+    /* Seed from the manifest so first layout is correct with zero downloads. */
+    Object.keys(ASSET_MANIFEST).forEach(src => {
+        const e = ASSET_MANIFEST[src];
+        if (e && e.w && e.h) dims.set(src, { w: e.w, h: e.h, aspect: e.w / e.h });
+    });
+
+    /* ---- connection awareness -------------------------------------------
+       Tiers 0-2 always run: they are the premium-feel budget and this is a
+       three-minute visit, not a content site. Only the speculative Tier 3
+       backfill is gated. */
+    function allowBackfill() {
+        const c = navigator.connection;
+        if (!c) return true;
+        if (c.saveData) return false;
+        return !/(^|-)2g$/.test(c.effectiveType || '');
+    }
+
+    /* Warm the HTTP cache. `decode` is opt-in and deliberately rare: a
+       decoded 2000x1500 image is ~12MB of RAM, so decoding everything would
+       reintroduce the memory crash we are fixing elsewhere. */
+    function warm(src, { decode = false, priority = 'low', displayPx = 0 } = {}) {
+        const url = urlFor(src, displayPx);
+        if (requested.has(url) && (!decode || decoded.has(url))) return Promise.resolve();
+        requested.add(url);
+
+        const img = new Image();
+        if ('fetchPriority' in img) img.fetchPriority = priority;
+        img.decoding = 'async';
+
+        const done = new Promise(res => {
+            img.onload = () => {
+                setDims(src, img.naturalWidth, img.naturalHeight);
+                if (decode && img.decode) {
+                    img.decode().then(() => { decoded.add(url); res(); }).catch(res);
+                } else res();
+            };
+            img.onerror = () => { requested.delete(url); res(); };
+        });
+        img.src = url;
+        return done;
+    }
+
+    /* Serialised queue so tiers cannot stampede each other. */
+    const queue = [];
+    let draining = false;
+    function drain() {
+        if (draining) return;
+        draining = true;
+        const step = () => {
+            if (!queue.length) { draining = false; return; }
+            queue.sort((a, b) => a.tier - b.tier);
+            const batch = queue.splice(0, 3).map(job => warm(job.src, job.opts));
+            Promise.all(batch).then(() => requestIdle(step));
+        };
+        requestIdle(step);
+    }
+    function enqueue(src, tier, opts) {
+        if (requested.has(urlFor(src, opts && opts.displayPx))) return;
+        queue.push({ src, tier, opts: opts || {} });
+        drain();
+    }
+
+    const projectImages = (i) => {
+        const out = [];
+        buildMediaData(allProjectsData[i]).forEach(cl => {
+            cl.assets.forEach(a => { if (a.type === 'img') out.push(a.src); });
+        });
+        return out;
+    };
+
+    const prefetchedProjects = new Set();
+
     return {
-        get: (src) => map.get(src) || null,
-        set,
-        has: (src) => map.has(src),
+        urlFor,
+        get: (src) => dims.get(src) || null,
+        setDims,
         onResolve(fn) { listeners.add(fn); },
-        resolveImage(src) {
-            if (map.has(src)) return;
-            const img = new Image();
-            img.decoding = 'async';
-            img.onload = () => set(src, img.naturalWidth, img.naturalHeight);
-            img.onerror = () => set(src, 4, 3);
-            img.src = src;
+
+        /* TIER 1 — the cover images. The first three cards of each project's
+           first cluster are the only images on screen the instant a folder
+           opens, so they are the only ones worth warming speculatively. */
+        warmCovers() {
+            allProjectsData.forEach((p, i) => {
+                const first = buildMediaData(p)[0];
+                if (!first) return;
+                first.assets.slice(0, 3).forEach(a => {
+                    if (a.type === 'img') enqueue(a.src, 1, { decode: true, priority: 'low', displayPx: 400 });
+                });
+            });
+        },
+
+        /* TIER 2 — intent. The folder carousel tells us where the user is
+           going 1-3s before the click, and the open animation plus scene
+           crossfade adds ~1.9s more. That is enough runway for a whole
+           project on 4G, which is why this beats generic lazy-loading. */
+        prefetchProject(i) {
+            if (i === 99 || prefetchedProjects.has(i)) return;
+            prefetchedProjects.add(i);
+            projectImages(i).forEach(src => enqueue(src, 2, { priority: 'high', displayPx: 800 }));
+        },
+
+        /* TIER 3 — speculative backfill, lowest priority, skipped on 2G or
+           Save-Data. */
+        backfill() {
+            if (!allowBackfill()) return;
+            allProjectsData.forEach((_, i) => {
+                projectImages(i).forEach(src => enqueue(src, 3, { priority: 'low', displayPx: 800 }));
+            });
         }
     };
 })();
 
-/* Idle-time prefetch of image dimensions, project by project, so the first
-   layout of any project is already correct. Videos resolve on metadata load. */
-const requestIdle = window.requestIdleCallback || (cb => setTimeout(cb, 1));
-(function prefetchDimensions() {
-    const queue = [];
-    allProjectsData.forEach(p => {
-        buildMediaData(p).forEach(cl => {
-            cl.assets.forEach(a => { if (a.type === 'img') queue.push(a.src); });
-        });
-    });
-    let i = 0;
-    function step() {
-        let n = 0;
-        while (n < 4 && i < queue.length) { MediaDims.resolveImage(queue[i++]); n++; }
-        if (i < queue.length) requestIdle(step);
-    }
-    requestIdle(step);
-})();
+/* Kept as an alias so the rest of the module reads naturally. */
+const MediaDims = Assets;
 
 /* ==========================================================================
    6. SCENE 2 — COLLECTIONS
    --------------------------------------------------------------------------
-   No WebGL context, no Three.js objects, no raycaster. A ~30-line perspective
-   projector does the same maths, and because positions AND sizes both come
-   out of scaleAt(z), there is exactly one path from world space to screen
-   space instead of the two that used to disagree.
+   No WebGL context, no Three.js objects, no raycaster: a small perspective
+   projector does the same maths.
+
+   Phase 2 changes the positioning model. The grid is now STATIC DOM living
+   inside the native scroll container, so the compositor scrolls it and zero
+   JavaScript runs during a grid scroll. The projector is used only for the
+   OPENING / CAROUSEL / CLOSING states.
+
+   Previously every card was absolutely positioned in a sibling layer and
+   moved by JS from the scroll offset, which meant the cards trailed the
+   native scroller by at least one main-thread frame — always, on every
+   device — and froze outright whenever scroll events were coalesced during
+   iOS momentum. That was the lag and the label jump.
+
+   Cards are reparented (scroller <-> overlay) exactly twice per open/close,
+   never per frame. Grid and projected coordinates are derived from the same
+   projector at the same scale, so the handoff is pixel-identical and needs
+   no FLIP measurement.
    ========================================================================== */
 const S2 = (() => {
     const FOV = 45;
     const HALF_TAN = Math.tan(FOV * Math.PI / 360);
 
-    /* Design-space constants. Ratios, not tuned pixel values. */
     const CARD_W = 5.94;
     const CARD_H = 4.32;
     const CARD_RADIUS = 0.4;
-    const GAP_X_RATIO = 1.30;   // × CARD_W
-    const GAP_Y_RATIO = 1.65;   // × CARD_H
+    const GAP_X_RATIO = 1.30;
+    const GAP_Y_RATIO = 1.65;
     const TITLE_OFFSET = 3.6;
-    /* Camera padding as a ratio. A card ends up occupying 1/(1+pad) of the
-       constraining dimension, so these are directly readable as fill targets:
-       0.15 -> 87% (desktop, matches the original 1.15 padding exactly)
-       0.28 -> 78% (single column). The old build effectively gave 63% here
-       because scale was applied twice; 78% is the deliberate value. Raise
-       this number to shrink the cards, lower it to grow them. */
+
+    /* Camera padding as a ratio. A card occupies 1/(1+pad) of the
+       constraining dimension, so these read directly as fill targets:
+       0.15 -> 87% (desktop), 0.28 -> 78% (single column). */
     const GRID_PAD = 0.15;
     const GRID_PAD_COMPACT = 0.28;
 
@@ -1024,19 +1289,22 @@ const S2 = (() => {
         backBtn: document.getElementById('scene-two-back-btn')
     };
 
-    const cache = {};            // projectIndex -> { clusters, mediaData, cardScale }
+    const cache = {};
     let clusters = [];
     let mediaData = [];
     let activeProject = -1;
 
     const cam = { z: 20, y: 0 };
-    let focal = 1;               // px per world unit at distance 1
-    let baseScale = 1;           // px per world unit at z = 0
+    let focal = 1;
+    let baseScale = 1;        // px per world unit at z = 0 (grid)
+    let rasterScale = 1;      // px per world unit the element BOX is sized at
     let initialCamY = 0;
     let maxScrollPx = 0;
+    let scrollAtOpen = 0;
 
     let state = STATE.CLUSTERED;
     let activeCluster = -1;
+    let keepStacked = -1;   // cluster whose full stack stays visible at rest
     let openProgress = 0;
     let arrival = 0;
     let carouselPos = 0;
@@ -1044,7 +1312,7 @@ const S2 = (() => {
     let carouselScale = 1;
     let carouselZ = 0;
     let layoutDirty = true;
-    let dirtyFrames = 0;
+    let projecting = false;   // true whenever cards live in the overlay
 
     /* ---------- projector ---------- */
     const scaleAt = (z) => focal / (cam.z - z);
@@ -1066,7 +1334,6 @@ const S2 = (() => {
             const cards = clusterData.assets.map((media, j) => {
                 const el = document.createElement('div');
                 el.className = 'dom-card';
-                el.style.display = 'none';
 
                 let mediaEl;
                 if (media.type === 'video') {
@@ -1075,26 +1342,25 @@ const S2 = (() => {
                     mediaEl.muted = true;
                     mediaEl.playsInline = true;
                     mediaEl.setAttribute('playsinline', '');
-                    /* preload metadata only. Full buffering and playback are
-                       started by activate() for the visible project alone. */
                     mediaEl.preload = 'metadata';
                     mediaEl.src = media.src;
                     mediaEl.addEventListener('loadedmetadata', function () {
-                        MediaDims.set(media.src, this.videoWidth, this.videoHeight);
+                        Assets.setDims(media.src, this.videoWidth, this.videoHeight);
                     });
                 } else {
                     mediaEl = document.createElement('img');
-                    mediaEl.loading = 'lazy';
+                    /* No loading="lazy". These cards are positioned by
+                       transform and usually start outside the viewport, so
+                       lazy deferred them indefinitely — that is why images
+                       only appeared after the folder click. */
                     mediaEl.decoding = 'async';
                     mediaEl.alt = '';
-                    mediaEl.src = media.src;
                     mediaEl.addEventListener('load', function () {
-                        MediaDims.set(media.src, this.naturalWidth, this.naturalHeight);
+                        Assets.setDims(media.src, this.naturalWidth, this.naturalHeight);
                     });
                 }
 
                 el.appendChild(mediaEl);
-                dom.layer.appendChild(el);
 
                 let baseRotZ = 0;
                 const n = clusterData.assets.length;
@@ -1109,14 +1375,17 @@ const S2 = (() => {
                     el, mediaEl,
                     src: media.src,
                     isVideo: media.type === 'video',
+                    srcApplied: '',
+                    srcNeeded: 0,
                     index: j,
                     baseRotZ,
                     wWorld: CARD_W * cardScale,
                     hWorld: CARD_H * cardScale,
-                    cx: 0, cy: 0,           // carousel target, camera-relative
+                    cx: 0, cy: 0,
+                    gridX: 0, gridY: 0,
                     lastTransform: '',
                     lastOpacity: -1,
-                    lastVisibility: '',
+                    lastDisplay: '',
                     lastZ: -1,
                     lastW: -1, lastH: -1
                 };
@@ -1125,14 +1394,11 @@ const S2 = (() => {
             const titleEl = document.createElement('div');
             titleEl.className = 'cluster-title';
             titleEl.textContent = clusterData.title;
-            titleEl.style.display = 'none';
-            dom.layer.appendChild(titleEl);
 
             built.push({
                 cards,
                 titleEl,
                 home: { x: 0, y: 0 },
-                titleOpacity: 1,
                 maxScroll: 0,
                 lastTitleTransform: '',
                 lastTitleOpacity: -1
@@ -1147,71 +1413,201 @@ const S2 = (() => {
     function sizeCard(card, cardScale) {
         const boxW = CARD_W * cardScale;
         const boxH = CARD_H * cardScale;
-        const dims = MediaDims.get(card.src);
-        if (!dims) { card.wWorld = boxW; card.hWorld = boxH; return; }
+        const d = Assets.get(card.src);
+        if (!d) { card.wWorld = boxW; card.hWorld = boxH; return; }
         const boxAspect = boxW / boxH;
-        if (dims.aspect < boxAspect) {
+        if (d.aspect < boxAspect) {
             card.hWorld = boxH;
-            card.wWorld = boxH * dims.aspect;
+            card.wWorld = boxH * d.aspect;
         } else {
             card.wWorld = boxW;
-            card.hWorld = boxW / dims.aspect;
+            card.hWorld = boxW / d.aspect;
         }
     }
 
-    /* ---------- grid layout ---------- */
+    /* The largest scale a card can ever reach, computed with the most
+       generous possible safe area. The element BOX is sized at this scale so
+       that a promoted layer is rasterised at full carousel resolution and
+       only ever scaled DOWN. Upscaling a composited layer is what made the
+       carousel look soft; downscaling is free and looks correct. */
+    function maxCarouselScale(cardScale) {
+        const padSide = V.width * 0.06;
+        if (V.compact) return (V.width - padSide * 2) / (CARD_W * cardScale);
+        const generousTop = V.height * 0.18;
+        const padBottom = V.height * 0.08;
+        return Math.min(
+            (V.height - generousTop - padBottom) / (CARD_H * cardScale),
+            (V.width - padSide * 2) / (CARD_W * cardScale)
+        );
+    }
+
+    /* ---------- grid layout (runs on resize, not on scroll) ---------- */
     function layoutGrid() {
         const cols = V.columns;
-        const gapX = CARD_W * GAP_X_RATIO;
-        const gapY = CARD_H * GAP_Y_RATIO;
-        const titleOffset = V.compact ? TITLE_OFFSET * 0.75 : TITLE_OFFSET;
+        
+        const cardScale = cache[activeProject] ? cache[activeProject].cardScale : 1;
+
+        const gapX = (CARD_W * cardScale) * GAP_X_RATIO;
+        const gapY = (CARD_H * cardScale) * GAP_Y_RATIO;
+        
+        const baseTitleOffset = V.compact ? TITLE_OFFSET * 0.75 : TITLE_OFFSET;
+        const titleOffset = baseTitleOffset * cardScale;
+
         const rows = Math.ceil(clusters.length / cols) || 1;
 
-        /* Frame the camera should fit: full column width, and a couple of rows
-           vertically. Both derived, both continuous. */
         const frameRows = cols === 1 ? 1 : 2;
-        const frameW = (cols - 1) * gapX + CARD_W;
-        const frameH = (frameRows - 1) * gapY + CARD_H + titleOffset;
         const pad = V.compact ? GRID_PAD_COMPACT : GRID_PAD;
+
+        /* On compact (single-column) layouts the camera must be fitted to the
+           actual rendered card dimensions, not the unscaled CARD_W/CARD_H
+           design constants. Projects with cardScale > 1 (Graphic Design,
+           Digital Art) were overflowing the viewport and blocking labels
+           because the camera was pulled back to fit the base box, then the
+           card was drawn at 1.26× inside that view. Including cardScale in
+           the frame geometry here pulls the camera back proportionally so
+           every project renders at the same visual size on screen.
+           Desktop (multi-column) frames are not affected — their frame
+           already spans multiple columns and the card fits within it. */
+        const frameCardW = V.compact ? CARD_W * cardScale : CARD_W;
+        const frameCardH = V.compact ? CARD_H * cardScale : CARD_H;
+        const frameW = (cols - 1) * gapX + frameCardW;
+        const frameH = (frameRows - 1) * gapY + frameCardH + titleOffset;
 
         cam.z = fitDistance(frameW, frameH, FOV, pad);
         focal = (V.height / 2) / HALF_TAN;
         baseScale = scaleAt(0);
 
+        rasterScale = Math.max(baseScale, maxCarouselScale(cardScale));
+
         const visible = visibleSizeAt(cam.z, FOV);
         const startX = -((cols - 1) * gapX) / 2;
 
-        const cardScale = cache[activeProject] ? cache[activeProject].cardScale : 1;
         clusters.forEach((c, i) => {
             c.cards.forEach(card => sizeCard(card, cardScale));
             c.home.x = startX + (i % cols) * gapX;
             c.home.y = -Math.floor(i / cols) * gapY;
         });
 
-        /* Content extent in world units. */
-        const contentTop = CARD_H / 2;
-        const contentBottom = -(rows - 1) * gapY - CARD_H / 2 - titleOffset;
+        const contentTop = (CARD_H * cardScale) / 2;
+        const contentBottom = -(rows - 1) * gapY - (CARD_H * cardScale) / 2 - titleOffset;
         const contentH = contentTop - contentBottom;
         const padY = visible.h * 0.10;
 
         if (contentH + padY * 2 <= visible.h) {
-            /* Fits: centre it. No headroom asymmetry possible. */
             initialCamY = (contentTop + contentBottom) / 2;
             maxScrollPx = 0;
         } else {
-            /* Scrolls: anchor the top edge exactly padY below the viewport top,
-               every time, on every viewport, in every direction. */
             initialCamY = contentTop + padY - visible.h / 2;
             maxScrollPx = (contentH + padY * 2 - visible.h) * baseScale;
         }
 
         dom.scrollContent.style.height = (V.height + maxScrollPx) + 'px';
         applyScroll(dom.scroller.scrollTop);
+
+        /* Content-space position of each cluster. Content space is viewport
+           space at scrollTop = 0, so this is just screenX/screenY evaluated
+           with cam.y = initialCamY. The projector and the static grid
+           therefore agree exactly. */
+        const contentY = (yWorld) => V.height / 2 - (yWorld - initialCamY) * baseScale;
+
+        clusters.forEach((c) => {
+            const cx = screenX(c.home.x, 0);
+            const cy = contentY(c.home.y);
+            c.cards.forEach(card => {
+                card.gridX = cx;
+                card.gridY = cy;
+                if (!projecting) {
+                    card.el.style.left = cx + 'px';
+                    card.el.style.top = cy + 'px';
+                }
+            });
+            c.titleEl.style.left = cx + 'px';
+            c.titleEl.style.top = contentY(c.home.y - titleOffset) + 'px';
+            c.titleEl.style.transform = 'translate(-50%, -50%)';
+        });
+
+        sizeElements();
+        if (!projecting) writeGridTransforms();
+    }
+
+    /* Element boxes are sized once per layout at rasterScale. */
+    function sizeElements() {
+        clusters.forEach(c => {
+            c.cards.forEach(card => {
+                const w = Math.round(card.wWorld * rasterScale);
+                const h = Math.round(card.hWorld * rasterScale);
+                if (w !== card.lastW || h !== card.lastH) {
+                    card.el.style.width = w + 'px';
+                    card.el.style.height = h + 'px';
+                    card.el.style.borderRadius = (CARD_RADIUS * rasterScale).toFixed(1) + 'px';
+                    card.lastW = w; card.lastH = h;
+                }
+                /* Request the derivative that matches the largest size this
+                   card will actually be displayed at. */
+                if (!card.isVideo) {
+                    /* Only ever upgrade. Selecting a smaller variant after a
+                       resize would re-download and visibly reload an image
+                       that is already on screen at sufficient quality. */
+                    const needed = card.wWorld * rasterScale;
+                    if (needed > card.srcNeeded) {
+                        const url = Assets.urlFor(card.src, needed);
+                        if (url !== card.srcApplied) {
+                            card.srcApplied = url;
+                            card.srcNeeded = needed;
+                            card.mediaEl.src = url;
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    /* Static grid transform. Written on layout and during the arrival
+       animation only — never during a scroll. */
+    function writeGridTransforms() {
+        const s = baseScale / rasterScale;
+        clusters.forEach((c, i) => {
+            const clusterStagger = i * 0.08;
+            const dur = 1 + clusters.length * 0.08;
+            const ap = clamp(arrival * dur - clusterStagger, 0, 1);
+            const ease = 1 - Math.pow(1 - ap, 3);
+            const scale = s * (0.85 + 0.15 * ease);
+
+            c.cards.forEach((card, j) => {
+                /* Cards beyond the top three are normally culled from the
+                   resting grid to save layer memory. The exception is the
+                   cluster the user just closed (keepStacked): its full set
+                   stays visible, stacked pixel-coincident behind the top
+                   three, so the carousel collapses back into a stack that
+                   still looks like it holds every image — the tactile
+                   illusion — with no visible reshape to three tiles. */
+                const stacked = i === keepStacked;
+                const display = (j < 3 || stacked) ? 'flex' : 'none';
+                if (display !== card.lastDisplay) {
+                    card.el.style.display = display;
+                    card.lastDisplay = display;
+                }
+                if (display === 'none') return;
+
+                if (ease !== card.lastOpacity) {
+                    card.el.style.opacity = ease;
+                    card.lastOpacity = ease;
+                }
+                const t = `translate(-50%, -50%) scale(${scale.toFixed(4)}) rotateZ(${(-card.baseRotZ).toFixed(4)}rad)`;
+                if (t !== card.lastTransform) {
+                    card.el.style.transform = t;
+                    card.lastTransform = t;
+                }
+                const zi = 500 + i * 100 + (c.cards.length - j);
+                if (zi !== card.lastZ) { card.el.style.zIndex = zi; card.lastZ = zi; }
+            });
+
+            if (c.lastTitleOpacity !== 1) { c.titleEl.style.opacity = 1; c.lastTitleOpacity = 1; }
+        });
     }
 
     function applyScroll(px) {
-        const clamped = clamp(px, 0, maxScrollPx);
-        cam.y = initialCamY - clamped / baseScale;
+        cam.y = initialCamY - clamp(px, 0, maxScrollPx) / baseScale;
     }
 
     /* ---------- carousel layout (measured, per cluster) ---------- */
@@ -1219,8 +1615,8 @@ const S2 = (() => {
         const c = clusters[clusterIndex];
         if (!c) return;
 
-        /* Measured, not guessed. The info panel's real rendered box decides
-           where the cards may start, so wrapped text can never overlap them. */
+        /* Measured, not guessed: the info panel's real rendered box decides
+           where cards may start, so wrapped text can never overlap them. */
         const infoRect = dom.info.getBoundingClientRect();
         const gap = V.height * 0.035;
         const safeTop = Math.max(infoRect.bottom + gap, V.height * 0.12);
@@ -1232,21 +1628,16 @@ const S2 = (() => {
 
         let targetScale;
         if (V.compact) {
-            /* Vertical carousel: width is the constraint, height scrolls. */
             targetScale = (V.width - padSide * 2) / (CARD_W * cardScale);
         } else {
-            /* Horizontal carousel: height is the constraint, width scrolls —
-               but a single card must still never be wider than the viewport,
-               which is reachable in a tall two-column window. */
             targetScale = Math.min(
                 (V.height - safeTop - padBottom) / (CARD_H * cardScale),
                 (V.width - padSide * 2) / (CARD_W * cardScale)
             );
         }
 
-        /* Keep the cards a safe distance in front of the camera. */
         const minDistance = cam.z * 0.22;
-        targetScale = Math.min(targetScale, focal / minDistance);
+        targetScale = Math.min(targetScale, focal / minDistance, rasterScale);
         carouselScale = targetScale;
         carouselZ = cam.z - focal / targetScale;
 
@@ -1286,7 +1677,41 @@ const S2 = (() => {
         if (!clusters.length) return;
         layoutGrid();
         if (activeCluster !== -1) layoutCarousel(activeCluster);
-        dirtyFrames = 3;
+    }
+
+    /* ---------- reparenting: twice per transition, never per frame ------- */
+    function enterProjected() {
+        projecting = true;
+        clusters.forEach(c => {
+            c.cards.forEach(card => {
+                card.el.classList.add('animating');
+                card.el.style.left = '0px';
+                card.el.style.top = '0px';
+                if (card.lastDisplay !== 'flex') {
+                    card.el.style.display = 'flex';
+                    card.lastDisplay = 'flex';
+                }
+                card.lastTransform = '';
+                card.lastOpacity = -1;
+                card.lastZ = -1;
+                dom.layer.appendChild(card.el);
+            });
+        });
+    }
+
+    function exitProjected() {
+        projecting = false;
+        clusters.forEach(c => {
+            c.cards.forEach(card => {
+                card.el.classList.remove('animating');
+                card.el.style.left = card.gridX + 'px';
+                card.el.style.top = card.gridY + 'px';
+                card.lastTransform = '';
+                card.lastOpacity = -1;
+                dom.scrollContent.appendChild(card.el);
+            });
+        });
+        writeGridTransforms();
     }
 
     /* ---------- project activation / deactivation ---------- */
@@ -1294,13 +1719,14 @@ const S2 = (() => {
         if (activeProject === -1 || !cache[activeProject]) return;
         cache[activeProject].clusters.forEach(c => {
             c.cards.forEach(card => {
-                card.el.style.display = 'none';
+                if (card.el.parentNode) card.el.parentNode.removeChild(card.el);
+                card.lastDisplay = '';
                 if (card.isVideo) {
                     card.mediaEl.pause();
                     card.mediaEl.preload = 'metadata';
                 }
             });
-            c.titleEl.style.display = 'none';
+            if (c.titleEl.parentNode) c.titleEl.parentNode.removeChild(c.titleEl);
         });
     }
 
@@ -1312,21 +1738,25 @@ const S2 = (() => {
         activeProject = index;
         clusters = rec.clusters;
         mediaData = rec.mediaData;
+        projecting = false;
 
         clusters.forEach(c => {
             c.cards.forEach(card => {
-                card.el.style.display = 'flex';
+                card.el.classList.remove('animating');
                 card.lastTransform = '';
                 card.lastOpacity = -1;
-                card.lastVisibility = '';
+                card.lastDisplay = '';
                 card.lastW = -1;
+                dom.scrollContent.appendChild(card.el);
                 if (card.isVideo) {
                     card.mediaEl.preload = 'auto';
                     const p = card.mediaEl.play();
                     if (p && p.catch) p.catch(() => {});
                 }
             });
-            c.titleEl.style.display = 'block';
+            c.titleEl.style.opacity = 1;
+            c.lastTitleOpacity = 1;
+            dom.scrollContent.appendChild(c.titleEl);
         });
 
         dom.scroller.style.display = 'block';
@@ -1335,6 +1765,7 @@ const S2 = (() => {
 
         state = STATE.CLUSTERED;
         activeCluster = -1;
+        keepStacked = -1;
         openProgress = 0;
         carouselPos = carouselTarget = 0;
 
@@ -1343,13 +1774,14 @@ const S2 = (() => {
         arrival = 0;
         if (REDUCED_MOTION) {
             arrival = 1;
+            writeGridTransforms();
         } else {
-            gsap.to({ v: 0 }, {
+            const proxy = { v: 0 };
+            gsap.to(proxy, {
                 v: 1, duration: 1.44, ease: 'power3.out',
-                onUpdate: function () { arrival = this.targets()[0].v; dirtyFrames = 2; }
+                onUpdate: () => { arrival = proxy.v; if (!projecting) writeGridTransforms(); }
             });
         }
-        dirtyFrames = 4;
     }
 
     function unload() {
@@ -1367,28 +1799,31 @@ const S2 = (() => {
         dom.infoDesc.innerHTML = data.description;
 
         /* Force a synchronous layout read so the measured safe area reflects
-           THIS cluster's description before the carousel geometry is built. */
+           THIS cluster's description before carousel geometry is built. */
         void dom.info.offsetHeight;
 
+        scrollAtOpen = dom.scroller.scrollTop;
+        applyScroll(scrollAtOpen);
         carouselPos = carouselTarget = 0;
         layoutCarousel(index);
 
-        /* The camera does not move. Carousel targets are stored relative to
-           cam.y, so the grid scroll position is untouched by opening a
-           cluster and is therefore restored exactly, for free, on close.
-           This is what removes the phantom headroom on return. */
+        /* overflow:hidden preserves scrollTop, so the grid position is
+           restored exactly on close with no bookkeeping. */
         dom.scroller.style.overflowY = 'hidden';
         dom.blocker.classList.add('active');
         dom.info.classList.add('active');
         dom.closeBtn.classList.add('active');
         dom.backBtn.classList.remove('active');
 
+        enterProjected();
+
         state = STATE.OPENING;
         openProgress = 0;
         const dur = REDUCED_MOTION ? 0 : (V.compact ? 0.8924 : 1.0476);
-        gsap.to({ v: 0 }, {
+        const proxy = { v: 0 };
+        gsap.to(proxy, {
             v: 1, duration: dur, ease: 'power4.inOut',
-            onUpdate: function () { openProgress = this.targets()[0].v; },
+            onUpdate: () => { openProgress = proxy.v; },
             onComplete: () => { state = STATE.CAROUSEL; }
         });
     }
@@ -1401,17 +1836,34 @@ const S2 = (() => {
         dom.scroller.style.overflowY = 'auto';
         state = STATE.CLOSING;
 
+        /* Instant close must be synchronous. A zero-duration tween still
+           resolves on the next tick, which meant load() could swap in the
+           next project before the teardown ran and reparent the wrong
+           elements. */
+        if (instant) {
+            dom.info.classList.remove('active');
+            dom.blocker.classList.remove('active');
+            openProgress = 0;
+            carouselPos = carouselTarget = 0;
+            state = STATE.CLUSTERED;
+            keepStacked = -1;
+            activeCluster = -1;
+            exitProjected();
+            return;
+        }
+
         const tl = gsap.timeline({
             defaults: { ease: 'power2.inOut' },
             onComplete: () => {
                 state = STATE.CLUSTERED;
+                keepStacked = activeCluster;   // its full stack stays visible
                 activeCluster = -1;
                 carouselPos = carouselTarget = 0;
-                dirtyFrames = 3;
+                exitProjected();
             }
         });
 
-        if (!instant && !REDUCED_MOTION && carouselPos > 0.01) {
+        if (!REDUCED_MOTION && carouselPos > 0.01) {
             const proxy = { v: carouselPos };
             tl.to(proxy, {
                 v: 0, duration: V.compact ? 0.63 : 0.9,
@@ -1429,10 +1881,10 @@ const S2 = (() => {
         const proxy2 = { v: openProgress };
         tl.to(proxy2, {
             v: 0,
-            duration: (instant || REDUCED_MOTION) ? 0 : (V.compact ? 1.1808 : 1.496),
+            duration: REDUCED_MOTION ? 0 : (V.compact ? 1.1808 : 1.496),
             ease: 'power2.out',
             onUpdate: () => { openProgress = proxy2.v; }
-        }, (instant || REDUCED_MOTION) ? 0 : '+=0.09');
+        }, REDUCED_MOTION ? 0 : '+=0.09');
     }
 
     function applyCarouselDelta(deltaPx) {
@@ -1455,24 +1907,20 @@ const S2 = (() => {
         return -1;
     }
 
-    /* ---------- frame ---------- */
+    /* ---------- frame (projected states only) ---------- */
     const FIXED_STAGGER = 0.24;
 
     function frame() {
         if (layoutDirty) { layoutDirty = false; relayout(); }
 
+        /* The whole point of the new positioning model: when the grid is at
+           rest there is nothing to do, and a scroll does not change that. */
+        if (!projecting) return;
+
         if (state === STATE.CAROUSEL) {
-            const prev = carouselPos;
             carouselPos += (carouselTarget - carouselPos) * 0.10;
-            if (Math.abs(carouselPos - prev) > 0.0005) dirtyFrames = 2;
         }
 
-        const moving = state !== STATE.CLUSTERED || arrival < 1 || dirtyFrames > 0;
-        if (!moving) return;
-        if (dirtyFrames > 0) dirtyFrames--;
-
-        /* Info panel tracks the carousel scroll so caption and cards move as
-           one object. */
         if (state === STATE.CAROUSEL || state === STATE.CLOSING) {
             const off = -carouselPos * carouselScale;
             dom.info.style.transform = V.compact
@@ -1484,21 +1932,16 @@ const S2 = (() => {
 
         const titleOffset = V.compact ? TITLE_OFFSET * 0.75 : TITLE_OFFSET;
         const pushZ = -cam.z * 0.25;
+        const rasterRatio = 1 / rasterScale;
 
         for (let i = 0; i < clusters.length; i++) {
             const c = clusters[i];
             const isActive = i === activeCluster;
 
-            const titleOpacity = state === STATE.CLUSTERED ? 1 : (1 - openProgress);
+            const titleOpacity = 1 - openProgress;
             if (titleOpacity !== c.lastTitleOpacity) {
                 c.titleEl.style.opacity = titleOpacity;
                 c.lastTitleOpacity = titleOpacity;
-            }
-            const tx = screenX(c.home.x, 0);
-            const ty = screenY(c.home.y - titleOffset, 0);
-            if (isFinite(tx) && isFinite(ty)) {
-                const t = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, 0) translate(-50%, -50%)`;
-                if (t !== c.lastTitleTransform) { c.titleEl.style.transform = t; c.lastTitleTransform = t; }
             }
 
             const n = c.cards.length;
@@ -1511,65 +1954,49 @@ const S2 = (() => {
                 const startY = c.home.y;
                 const startZ = -j * 0.1;
 
-                let x, y, z, rot, opacity, extraScale = 1;
+                const p = clamp(openProgress * durationMul - j * stagger, 0, 1);
+                const arc = Math.sin(p * Math.PI) * Math.min(2.0, cam.z * 0.12);
 
-                if (state === STATE.CLUSTERED) {
-                    const clusterStagger = i * 0.08;
-                    const dur = 1 + clusters.length * 0.08;
-                    const ap = clamp(arrival * dur - clusterStagger, 0, 1);
-                    const ease = 1 - Math.pow(1 - ap, 3);
-                    extraScale = 0.85 + 0.15 * ease;
-                    x = startX; y = startY; z = startZ; rot = card.baseRotZ;
-                    opacity = (j < 3 ? 1 : 0) * ease;
+                let x, y, z, rot, opacity;
+
+                if (isActive) {
+                    const endX = V.compact ? card.cx : card.cx - carouselPos;
+                    const endY = V.compact ? (cam.y + card.cy + carouselPos) : (cam.y + card.cy);
+                    x = startX + (endX - startX) * p;
+                    y = startY + (endY - startY) * p;
+                    z = startZ + (carouselZ - startZ) * p + arc;
+                    rot = card.baseRotZ * (1 - p);
+                    /* Deep cards stay fully opaque throughout, so on close
+                       (p -> 0) they settle onto the cluster stack rather than
+                       fading out of existence. This is what removes the visual
+                       reduction-to-three on return. */
+                    opacity = 1;
                 } else {
-                    const p = clamp(openProgress * durationMul - j * stagger, 0, 1);
-                    const arc = Math.sin(p * Math.PI) * Math.min(2.0, cam.z * 0.12);
-
-                    if (isActive) {
-                        const endX = V.compact ? card.cx : card.cx - carouselPos;
-                        const endY = V.compact ? (cam.y + card.cy + carouselPos) : (cam.y + card.cy);
-                        x = startX + (endX - startX) * p;
-                        y = startY + (endY - startY) * p;
-                        z = startZ + (carouselZ - startZ) * p + arc;
-                        rot = card.baseRotZ * (1 - p);
-                        opacity = j < 3 ? 1 : p;
-                    } else {
-                        const dx = c.home.x;
-                        const dy = c.home.y - cam.y;
-                        const endX = c.home.x + dx * 0.8;
-                        const endY = c.home.y + dy * 0.8;
-                        x = startX + (endX - startX) * p;
-                        y = startY + (endY - startY) * p;
-                        z = startZ + (pushZ - startZ) * p;
-                        rot = card.baseRotZ;
-                        opacity = (j < 3 ? 1 : 0) * (1 - p);
-                    }
+                    const endX = c.home.x + c.home.x * 0.8;
+                    const endY = c.home.y + (c.home.y - cam.y) * 0.8;
+                    x = startX + (endX - startX) * p;
+                    y = startY + (endY - startY) * p;
+                    z = startZ + (pushZ - startZ) * p;
+                    rot = card.baseRotZ;
+                    opacity = (j < 3 ? 1 : 0) * (1 - p);
                 }
 
                 if (opacity !== card.lastOpacity) { card.el.style.opacity = opacity; card.lastOpacity = opacity; }
-                const vis = opacity < 0.005 ? 'hidden' : 'visible';
-                if (vis !== card.lastVisibility) { card.el.style.visibility = vis; card.lastVisibility = vis; }
-                if (vis === 'hidden') continue;
+                const display = opacity < 0.005 ? 'none' : 'flex';
+                if (display !== card.lastDisplay) { card.el.style.display = display; card.lastDisplay = display; }
+                if (display === 'none') continue;
 
-                /* Element box is sized once per layout at z = 0; per-frame depth
-                   is a CSS scale, so there is no layout thrash. */
-                const wpx = Math.round(card.wWorld * baseScale);
-                const hpx = Math.round(card.hWorld * baseScale);
-                if (wpx !== card.lastW || hpx !== card.lastH) {
-                    card.el.style.width = wpx + 'px';
-                    card.el.style.height = hpx + 'px';
-                    card.el.style.borderRadius = (CARD_RADIUS * baseScale).toFixed(1) + 'px';
-                    card.lastW = wpx; card.lastH = hpx;
-                }
-
-                const s = scaleAt(z) / baseScale;
+                /* Box is already sized at rasterScale, so the transform only
+                   needs the ratio between the current projected scale and
+                   that raster scale — a value <= 1 in every state. */
+                const s = scaleAt(z) * rasterRatio;
                 const sx = screenX(x, z);
                 const sy = screenY(y, z);
                 if (!isFinite(sx) || !isFinite(sy) || !isFinite(s)) continue;
 
                 const transform =
                     `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(1)}px, 0) translate(-50%, -50%) ` +
-                    `scale(${(s * extraScale).toFixed(4)}) rotateZ(${(-rot).toFixed(4)}rad)`;
+                    `scale(${s.toFixed(4)}) rotateZ(${(-rot).toFixed(4)}rad)`;
                 if (transform !== card.lastTransform) {
                     card.el.style.transform = transform;
                     card.lastTransform = transform;
@@ -1582,12 +2009,12 @@ const S2 = (() => {
     }
 
     /* ---------- events ---------- */
-    /* Native scroll is the ONLY authority for the grid. The old wheel handler
-       that wrote back into scrollTop (and re-triggered this listener) is gone. */
+    /* Native scroll is the only authority for the grid. This handler updates
+       one number and touches no DOM, so a grid scroll stays entirely on the
+       compositor. */
     dom.scroller.addEventListener('scroll', () => {
-        if (Router.scene !== 2 || activeCluster !== -1) return;
+        if (Router.scene !== 2 || projecting) return;
         applyScroll(dom.scroller.scrollTop);
-        dirtyFrames = 2;
     }, { passive: true });
 
     dom.scroller.addEventListener('click', (e) => {
@@ -1601,7 +2028,7 @@ const S2 = (() => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); close(); }
     });
 
-    MediaDims.onResolve(() => { if (activeProject !== -1) layoutDirty = true; });
+    Assets.onResolve(() => { if (activeProject !== -1) layoutDirty = true; });
     V.onChange(() => { if (activeProject !== -1) layoutDirty = true; });
 
     Loop.register(2, frame);
@@ -1619,15 +2046,26 @@ const S2 = (() => {
    ========================================================================== */
 const container = document.getElementById('canvas-container');
 
-const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER, alpha: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(renderPixelRatio());
+/* antialias is back on for every device. Phase 1 disabled it on all mobile,
+   which visibly softened the glass folder edges. On the tile-based GPUs in
+   phones MSAA resolves in tile memory and is comparatively cheap — for
+   geometry-edge-dominated content it buys more perceived quality per unit
+   cost than raw resolution does. */
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
 renderer.setSize(V.width, V.height, false);
 renderer.domElement.style.width = '100%';
 renderer.domElement.style.height = '100%';
+Governor.register('scene1', (r) => renderer.setPixelRatio(r));
 renderer.shadowMap.enabled = false;   // nothing in the scene receives shadows
 renderer.autoClear = false;
 renderer.setClearColor('#CCCCCC', 1);
 container.appendChild(renderer.domElement);
+guardContext(renderer, 'scene1', () => {
+    /* Shaders and buffers are recreated by three.js on the next render; we
+       only need to re-upload the environment map, which lived in a render
+       target that did not survive. */
+    rebuildFolderEnvironment();
+});
 
 /* ---- orb ---- */
 const ORB_FOV = 45;
@@ -1819,10 +2257,18 @@ const carouselScene = new THREE.Scene();
 const carouselCam = new THREE.PerspectiveCamera(FOLDER_FOV, V.aspect, 0.1, 2000);
 carouselCam.position.set(0, 0, FOLDER_CAM_Z);
 
-const pmremGenerator = new THREE.PMREMGenerator(renderer);
-const envRT = pmremGenerator.fromScene(new RoomEnvironment(), 0.04);
-carouselScene.environment = envRT.texture;
-pmremGenerator.dispose();
+/* Declared as a hoisted function so the context-restore handler registered
+   above can call it. The PMREM lives in a render target, which does not
+   survive context loss and has to be regenerated. */
+let envRT = null;
+function rebuildFolderEnvironment() {
+    if (envRT) envRT.dispose();
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
+    carouselScene.environment = envRT.texture;
+    pmrem.dispose();
+}
+rebuildFolderEnvironment();
 
 carouselScene.add(new THREE.AmbientLight(0xffffff, 1.044));
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.74);
@@ -2035,7 +2481,7 @@ function layoutScene1() {
     carouselCam.aspect = V.aspect;
     carouselCam.updateProjectionMatrix();
 
-    renderer.setPixelRatio(renderPixelRatio());
+    renderer.setPixelRatio(Governor.ratioFor('scene1'));
     renderer.setSize(V.width, V.height, false);
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
@@ -2084,6 +2530,7 @@ const entranceState = { posY: -110, targetY: -110, velY: 0 };
 const angleStep = (Math.PI * 2) / 5;
 let targetRotation = 0, currentRotation = 0, isDragging = false;
 let startX = 0, startY = 0, previousX = 0, dragVelocity = 0;
+let carouselDragging = false, carouselPrevX = 0;
 let currentForceField = 0;
 const raycaster = new THREE.Raycaster(), mouse = new THREE.Vector2();
 
@@ -2260,7 +2707,6 @@ function frameScene1(dt, time) {
         currentRotation = 0; targetRotation = 0;
         organicSwayFactor = Math.max(0, organicSwayFactor - 0.05);
     } else {
-        Scene3.prefetch();
         if (transitionState === 'IDLE' || transitionState === 'CENTERING' || transitionState === 'CENTERING_TO_OPEN' || transitionState === 'OPENING') {
             let rotLerp = mix(0.375, 0.075, V.t);
             if (transitionState === 'CENTERING_TO_OPEN') rotLerp = mix(0.45, 0.22, V.t);
@@ -2385,6 +2831,23 @@ function frameScene1(dt, time) {
         cache.focus = Math.abs(wrappedTheta) < 0.25 && carouselEntrance > 0.5;
         cache.hover = folder.userData.isHovered;
 
+        /* TIER 2 INTENT SIGNAL.
+           A centred or hovered folder is the strongest prediction we have of
+           the next click, and it arrives 1-3s early. Add the 1050ms open
+           sequence and the 800ms scene crossfade and there is ~3-5s of
+           runway — enough for a whole project on 4G. This is what makes
+           entering a folder feel instant, and it is why generic lazy-loading
+           was the wrong tool here.
+
+           The mind map is included, but only now: it is what pushed the GPU
+           over its budget when Phase 1 prefetched it unconditionally, and
+           with the TILE_PX cap it costs ~26-106MB instead of ~1.2GB. */
+        if ((cache.focus || cache.hover) && !isSystemLocked) {
+            const pIdx = PROJECT_INDEX[folderNames[i]];
+            if (pIdx === 99) Scene3.ensureLoaded();
+            else if (pIdx !== undefined) Assets.prefetchProject(pIdx);
+        }
+
         const label = labels[i];
         const t = `translate(-50%, -50%) translate3d(${cache.x.toFixed(1)}px, ${cache.y.toFixed(1)}px, 0)`;
         if (t !== cache.lastT) { label.style.transform = t; cache.lastT = t; }
@@ -2423,12 +2886,15 @@ const Scene3 = (() => {
     scene.fog = new THREE.FogExp2(0xCCCCCC, 0.03);
     const camera = new THREE.PerspectiveCamera(MM_FOV, V.aspect, 0.1, 1000);
 
-    const rendererMM = new THREE.WebGLRenderer({ antialias: !LOW_POWER, alpha: true, powerPreference: 'high-performance' });
-    rendererMM.setPixelRatio(renderPixelRatio());
+    const rendererMM = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     rendererMM.setSize(V.width, V.height, false);
     rendererMM.domElement.style.width = '100%';
     rendererMM.domElement.style.height = '100%';
+    Governor.register('scene3', (r) => rendererMM.setPixelRatio(r));
     container3.appendChild(rendererMM.domElement);
+    guardContext(rendererMM, 'scene3', () => {
+        textures.forEach(t => { if (t) t.needsUpdate = true; });
+    });
 
     const controls = new OrbitControls(camera, rendererMM.domElement);
     controls.enableDamping = true;
@@ -2440,6 +2906,13 @@ const Scene3 = (() => {
     const GLOBE_RADIUS = 2.4;
     const TILE = 0.78;
     const globe = new THREE.Group();
+    /* Whole-sphere flip: images were upside down until the device itself was
+       physically turned over, i.e. a 180° roll around the viewing axis. A
+       single rotation on the parent group flips every tile's position and
+       orientation together, so the existing Fibonacci-sphere arrangement and
+       each tile's own lookAt/placement logic are completely untouched. */
+    globe.rotation.z = Math.PI;
+    globe.updateMatrixWorld(true);
     scene.add(globe);
 
     const corner = TILE * 0.08;
@@ -2468,7 +2941,6 @@ const Scene3 = (() => {
     const N = imagePaths.length;
     const textures = new Array(N);
     const tiles = [];
-    const loader = new THREE.TextureLoader();
     let loadedCount = 0;
     let started = false;
     let built = false;
@@ -2504,7 +2976,12 @@ const Scene3 = (() => {
             const y = GLOBE_RADIUS * Math.sin(theta) * Math.sin(phi);
             const z = GLOBE_RADIUS * Math.cos(phi);
             mesh.position.set(x, y, z);
-            mesh.lookAt(x * 2, y * 2, z * 2);
+            /* lookAt toward the centre means the tile's textured +Z front
+               faces outward — toward the viewer standing outside the sphere.
+               The globe group's 180° rotation (applied above) keeps every
+               tile upright. Positions, spacing, and the Fibonacci layout are
+               completely unchanged. */
+            mesh.lookAt(0, 0, 0);
             globe.add(mesh);
             tiles.push({
                 mesh,
@@ -2520,24 +2997,99 @@ const Scene3 = (() => {
         if (++loadedCount === N) build();
     }
 
+    /* ----------------------------------------------------------------------
+       TEXTURE BUDGET — this is the crash fix.
+
+       Phase 1 uploaded all 76 images at full source resolution as RGBA8 plus
+       mipmaps. At 2000x1500 that is ~16MB each, so ~1.2GB of GPU memory —
+       far past what mobile Safari will allow, which is why the page died and
+       needed a reload.
+
+       These tiles render at roughly 90-120 CSS px on screen. TILE_PX is
+       generously above that, and the whole set now costs:
+
+           512px -> 76 x 1.4MB  ~= 106MB
+           256px -> 76 x 0.35MB ~=  26MB
+
+       (A texture atlas was considered and rejected: 76 tiles at 256px need
+       two 2048x2048 atlases = 128 slots, so ~40% of the memory would be
+       padding — more bytes than the 76 individual textures, to save draw
+       calls that were never the bottleneck.)
+
+       The geometry is a square with 0..1 UVs, so images are already squashed
+       to square; resizing to a square bitmap preserves the existing look.
+       ---------------------------------------------------------------------- */
+    const TILE_PX = LOW_POWER ? 256 : 512;
+    const maxAniso = rendererMM.capabilities.getMaxAnisotropy();
+
+    function makeTexture(source) {
+        const tex = new THREE.Texture(source);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        /* Tiles sit at grazing angles on a sphere; at anisotropy 1 they blur
+           badly around the limb. */
+        tex.anisotropy = Math.min(8, maxAniso);
+        tex.needsUpdate = true;
+        return tex;
+    }
+
+    /* Canvas fallback for browsers without createImageBitmap resize options. */
+    function downscaleViaCanvas(path) {
+        return new Promise((res, rej) => {
+            const img = new Image();
+            img.decoding = 'async';
+            img.onload = () => {
+                const c = document.createElement('canvas');
+                c.width = c.height = TILE_PX;
+                const ctx = c.getContext('2d');
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, TILE_PX, TILE_PX);
+                res(makeTexture(c));
+            };
+            img.onerror = rej;
+            img.src = path;
+        });
+    }
+
+    async function loadTile(path) {
+        if (typeof createImageBitmap === 'function') {
+            try {
+                const res = await fetch(path, { cache: 'force-cache' });
+                if (!res.ok) throw new Error(res.status);
+                const blob = await res.blob();
+                const bmp = await createImageBitmap(blob, {
+                    resizeWidth: TILE_PX,
+                    resizeHeight: TILE_PX,
+                    resizeQuality: 'high'
+                });
+                return makeTexture(bmp);
+            } catch (e) {
+                /* Older Safari ignores or rejects the resize options. */
+            }
+        }
+        return downscaleViaCanvas(path);
+    }
+
     function ensureLoaded() {
         if (started) return;
         started = true;
         let i = 0;
         function step() {
+            const batch = [];
             let n = 0;
             while (n < 3 && i < N) {
-                const idx = i, path = imagePaths[i];
-                loader.load(path, (tex) => {
-                    tex.colorSpace = THREE.SRGBColorSpace;
-                    tex.generateMipmaps = true;
-                    tex.minFilter = THREE.LinearMipmapLinearFilter;
-                    textures[idx] = tex;
-                    onOne();
-                }, undefined, () => { textures[idx] = null; onOne(); });
+                const idx = i;
+                batch.push(
+                    loadTile(imagePaths[idx])
+                        .then(tex => { textures[idx] = tex; })
+                        .catch(() => { textures[idx] = null; })
+                        .then(onOne)
+                );
                 i++; n++;
             }
-            if (i < N) requestIdle(step);
+            Promise.all(batch).then(() => { if (i < N) requestIdle(step); });
         }
         requestIdle(step);
     }
@@ -2548,7 +3100,7 @@ const Scene3 = (() => {
     function layout() {
         camera.aspect = V.aspect;
         camera.updateProjectionMatrix();
-        rendererMM.setPixelRatio(renderPixelRatio());
+        rendererMM.setPixelRatio(Governor.ratioFor('scene3'));
         rendererMM.setSize(V.width, V.height, false);
         rendererMM.domElement.style.width = '100%';
         rendererMM.domElement.style.height = '100%';
@@ -2569,8 +3121,20 @@ const Scene3 = (() => {
 
         raycasterMM.setFromCamera(mouseMM, camera);
         const hits = raycasterMM.intersectObject(hitSphere);
-        if (hits.length) { _hitPoint.copy(hits[0].point); isHovering = true; }
-        else isHovering = false;
+        if (hits.length) {
+            /* hits[0].point is world space; t.base/t.dir are local space
+               (raw Fibonacci-sphere coordinates, never transformed). Those
+               matched by coincidence when the group had no rotation. Now
+               that the whole globe is flipped 180°, the hit point must be
+               brought into the group's local space before it's compared
+               against per-tile local vectors, or the push/hover effect would
+               land 180° away from the actual touch point. */
+            _hitPoint.copy(hits[0].point);
+            globe.worldToLocal(_hitPoint);
+            isHovering = true;
+        } else {
+            isHovering = false;
+        }
 
         const protrusion = mix(1.45, 1.0, V.t);
 
@@ -2717,7 +3281,8 @@ window.addEventListener('wheel', (e) => {
     if (Router.scene === 1) {
         e.preventDefault();
         if (!isSystemLocked && transitionState === 'IDLE' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-            targetRotation += e.deltaX * 0.002;
+            /* Trackpad swipe direction (new, confirmed correct — do not touch). */
+            targetRotation -= e.deltaX * 0.002;
             hasSwiped = true;
             clearTimeout(wheelSnapTimeout);
             wheelSnapTimeout = setTimeout(() => {
@@ -2728,7 +3293,9 @@ window.addEventListener('wheel', (e) => {
         applyVirtualScroll(e.deltaY);
     } else if (Router.scene === 2 && S2.activeCluster !== -1) {
         e.preventDefault();
-        const delta = V.compact ? e.deltaY : (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
+        /* Compact (touch) carousel scrolls vertically. Desktop carousel is
+           horizontal only — vertical wheel no longer navigates it. */
+        const delta = V.compact ? e.deltaY : e.deltaX;
         S2.applyCarouselDelta(delta);
     }
     /* Scene 2 grid: no branch. The scroll container handles it natively. */
@@ -2786,6 +3353,14 @@ function handlePointerDown(e) {
         Scene3.setPointer(e.clientX, e.clientY);
         return;
     }
+    /* Desktop image carousel: direct horizontal drag with mouse or trackpad.
+       Compact/touch keeps its own touch handlers; this is pointer-only. */
+    if (Router.scene === 2 && S2.activeCluster !== -1 && !V.compact) {
+        carouselDragging = true;
+        carouselPrevX = e.clientX;
+        container.style.cursor = 'grabbing';
+        return;
+    }
     if (Router.scene !== 1 || isSystemLocked || transitionState !== 'IDLE') return;
     isDragging = true;
     startX = e.clientX; startY = e.clientY; previousX = e.clientX;
@@ -2795,9 +3370,19 @@ function handlePointerDown(e) {
 
 function handlePointerMove(e) {
     if (Router.scene === 3) { Scene3.setPointer(e.clientX, e.clientY); return; }
+    if (carouselDragging && Router.scene === 2 && S2.activeCluster !== -1) {
+        /* Drag content-follows-cursor: moving the pointer left advances the
+           carousel, matching the horizontal swipe already in place. */
+        S2.applyCarouselDelta(carouselPrevX - e.clientX);
+        carouselPrevX = e.clientX;
+        return;
+    }
     if (Router.scene !== 1 || isSystemLocked || transitionState !== 'IDLE') return;
 
     if (isDragging) {
+        /* Reverted per request: drag now uses the original, pre-reversal
+           direction again. Swipe (above) keeps the new direction — the two
+           are intentionally not required to match. */
         dragVelocity = (e.clientX - previousX) * 0.004;
         targetRotation += dragVelocity;
         previousX = e.clientX;
@@ -2819,6 +3404,11 @@ function handlePointerMove(e) {
 
 function handlePointerUp(e) {
     if (Router.scene === 3) { Scene3.setPointerDown(false); return; }
+    if (carouselDragging) {
+        carouselDragging = false;
+        container.style.cursor = 'grab';
+        return;
+    }
     if (Router.scene !== 1 || isSystemLocked || transitionState !== 'IDLE' || !isDragging) return;
     isDragging = false;
     container.style.cursor = 'grab';
@@ -2849,6 +3439,7 @@ function handlePointerUp(e) {
 
 function handlePointerLeave() {
     isDragging = false;
+    if (carouselDragging) { carouselDragging = false; container.style.cursor = 'grab'; }
     if (Router.scene === 3) Scene3.clearPointer();
 }
 
@@ -2922,6 +3513,18 @@ setTimeout(() => {
         if (a >= 1) clearInterval(id);
     }, 30);
 }, 100);
+
+/* TIER 1 — warm the cover images once Scene 1 is interactive. These twelve
+   are the only images on screen the instant a folder opens, so they are the
+   only ones worth decoding speculatively. Decoded RGBA is ~12MB per large
+   image, which is exactly why this list is short and why Tiers 2-3 warm the
+   HTTP cache without decoding. */
+setTimeout(() => {
+    Assets.warmCovers();
+    /* TIER 3 — speculative backfill, lowest priority, well after the covers
+       and any intent-driven fetch have settled. Skipped on 2G / Save-Data. */
+    setTimeout(() => Assets.backfill(), 4000);
+}, 1500);
 
 setTimeout(() => {
     homeBtn.style.opacity = 1;
