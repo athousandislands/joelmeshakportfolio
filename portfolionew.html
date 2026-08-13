@@ -3290,10 +3290,17 @@ Loop.register(1, frameScene1);
       The code probes for the local copy at startup and only falls back to the
       CDN if it is missing, so this can be done at any time.
 
-   VERIFYING IT WORKED: the console logs `[scene3] KTX2 active` on the first
-   successful compressed load, and a summary line
-   `[scene3] tiles: N via KTX2, M via image fallback, K failed` when loading
-   completes. If you see 0 via KTX2, the files are not where ktx2Dir points.
+   VERIFYING IT WORKED (do this once, it fails silently otherwise):
+     1. DevTools > Network, filter "ktx2". Loading the page should produce a
+        steady trickle of ~210KB .ktx2 requests starting ~3s in — 76 on
+        desktop, 33 on a low-power device. Seeing .jpeg/.JPG requests instead
+        means it fell back.
+     2. Console: `[scene3] Basis transcoder: self-hosted` (not "CDN fallback"
+        — if it says CDN despite the files existing, your host may not answer
+        HEAD requests), then `[scene3] KTX2 active`, then a summary
+        `[scene3] tiles: N via KTX2, 0 via image fallback, 0 failed`.
+     3. One-liner:
+        performance.getEntriesByType('resource').filter(r => r.name.endsWith('.ktx2')).length
    ------------------------------------------------------------------------- */
 const MINDMAP = {
     useKTX2: true,
@@ -3318,7 +3325,6 @@ const transcoderReady = fetch(MINDMAP.transcoderPath + 'basis_transcoder.js', { 
 const Scene3 = (() => {
     const MM_FOV = 60;
     const GLOBE_RADIUS = 2.4;
-    const TILE = 0.78;
 
     const container3 = document.getElementById('mindmap-canvas-container');
     const loadingEl = document.getElementById('mindmap-loading');
@@ -3333,9 +3339,55 @@ const Scene3 = (() => {
         "61.jpeg","62.jpeg","63.jpeg","64.jpeg","65.jpeg","66.png","67.jpeg","68.jpeg","69.jpeg","70.jpeg",
         "71.jpeg","72.jpeg","73.jpeg","74.jpeg","75.jpeg","76.jpeg"
     ];
-    const imagePaths = imageFiles.map(f => `assets/projects/mind-map/gallery/${f}`);
-    const ktx2Paths = imageFiles.map(f => `${MINDMAP.ktx2Dir}${f.replace(/\.[^.]+$/, '')}.ktx2`);
-    const N = imagePaths.length;
+    const allImagePaths = imageFiles.map(f => `assets/projects/mind-map/gallery/${f}`);
+    const allKtx2Paths = imageFiles.map(f => `${MINDMAP.ktx2Dir}${f.replace(/\.[^.]+$/, '')}.ktx2`);
+    const FULL_N = imageFiles.length;
+
+    /* ---- TILE SUBSET ------------------------------------------------------
+       Desktop renders the full set. Low-power devices render a random subset,
+       chosen ONCE per page load — before any warming starts, so we only ever
+       download the tiles we will actually show. Re-entering the mind map in
+       the same session reuses the same (already prepared) set; a fresh visit
+       gets a fresh combination. All 76 source files stay in the repo.
+
+       Gated on LOW_POWER, not V.compact: the subset must be fixed before the
+       first byte is fetched, and V.compact can flip when a desktop window is
+       resized. LOW_POWER is a one-time device-capability read. */
+    const MOBILE_TILE_COUNT = 33;
+
+    const activeIndices = (() => {
+        if (!LOW_POWER || FULL_N <= MOBILE_TILE_COUNT) {
+            return Array.from({ length: FULL_N }, (_, i) => i);
+        }
+        const pool = Array.from({ length: FULL_N }, (_, i) => i);
+        for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        return pool.slice(0, MOBILE_TILE_COUNT);
+    })();
+
+    const N = activeIndices.length;
+    const imagePaths = activeIndices.map(i => allImagePaths[i]);
+    const ktx2Paths = activeIndices.map(i => allKtx2Paths[i]);
+
+    /* ---- DENSITY --------------------------------------------------------
+       Fewer tiles on the same sphere would read as sparse, so tile size grows
+       to hold the coverage. Exact area parity would be sqrt(76/33) = 1.518,
+       but these are FLAT quads on a curved surface: at 1.518 a tile's
+       half-diagonal subtends ~41 degrees of the sphere and neighbouring
+       corners start to interpenetrate. Capped at 1.40 (~55% coverage vs 64%)
+       — marginally sparser, visibly cleaner silhouette.
+
+       The push interaction radius is in world units and was tuned to catch a
+       certain NUMBER of neighbours. With tiles further apart it must scale by
+       the same factor or the ripple catches ~half as many tiles and feels
+       stingy. maxPush and the idle pulse are proportional to position and are
+       left alone. */
+    const DENSITY_SCALE = Math.min(Math.sqrt(FULL_N / N), 1.40);
+    const TILE = 0.78 * DENSITY_SCALE;
+    const EFFECT_RADIUS_BASE = 1.8 * DENSITY_SCALE;
+    const EFFECT_RADIUS_HOLD = 0.7 * DENSITY_SCALE;
 
     /* Scene graph objects that are cheap and stateless live here; anything
        holding GPU memory is created in mount(). */
@@ -3352,22 +3404,38 @@ const Scene3 = (() => {
     let tileGeo = null;
     let unsubViewport = null;
 
+    /* PERSISTENT across mount/unmount. Transcoding is the expensive step, so
+       the prepared textures outlive the renderer: leaving and re-entering the
+       mind map re-uploads from data already in memory rather than
+       re-downloading and re-transcoding. Costs ~11MB (mobile) / ~26MB
+       (desktop) resident, well under the levels that were causing trouble. */
     const textures = new Array(N);
+    const failedTiles = new Set();
+    let preparedCount = 0;
+    let summaryLogged = false;
+
     let tiles = [];
     let uploadQueue = [];
     let uploadedCount = 0;
-    let failedCount = 0;
     let ktx2Hits = 0, ktx2Misses = 0, ktx2Errors = 0, ktx2Disabled = false;
     let revealed = false;
     let revealTween = null;
     let revealTimeout = null;
     let mounted = false;
-    let loadStarted = false;
-    let prefetched = false;
+    let prewarmStarted = false;
 
     const TILE_OPACITY = 0.95;
     /* Never wait forever on a stalled request. */
     const REVEAL_HARD_TIMEOUT_MS = 25000;
+
+    /* Network fetch and transcode have different cost profiles. Four
+       concurrent fetches is comfortable (browsers allow ~6/host and HTTP/2
+       multiplexes). Transcode is CPU-bound and UASTC is not cheap, so weak
+       devices get two. Four also matches KTX2Loader's default worker pool —
+       going wider just queues behind it while holding more payloads in
+       flight. */
+    const NET_BATCH = 4;
+    const TRANSCODE_BATCH = LOW_POWER ? 2 : 4;
 
     const TILE_PX = LOW_POWER ? 256 : 512;
 
@@ -3399,7 +3467,11 @@ const Scene3 = (() => {
     function finishTexture(tex) {
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.magFilter = THREE.LinearFilter;
-        tex.anisotropy = Math.min(8, rendererMM ? rendererMM.capabilities.getMaxAnisotropy() : 1);
+        /* Textures are now prepared BEFORE the mind map's renderer exists, so
+           fall back to scene 1's renderer for the capability read. Same
+           device, same driver, same limit. */
+        const capSrc = rendererMM || renderer;
+        tex.anisotropy = Math.min(8, capSrc ? capSrc.capabilities.getMaxAnisotropy() : 1);
         tex.needsUpdate = true;
         return tex;
     }
@@ -3535,10 +3607,7 @@ const Scene3 = (() => {
         clearTimeout(revealTimeout);
         revealTimeout = null;
 
-        console.info(
-            `[scene3] tiles: ${ktx2Hits} via KTX2, ${ktx2Misses} via image fallback, ${failedCount} failed` +
-            (reason ? ` (${reason})` : '')
-        );
+        if (reason) console.warn(`[scene3] revealing early: ${reason}`);
 
         loadingEl.style.opacity = 0;
         globe.visible = true;
@@ -3564,48 +3633,137 @@ const Scene3 = (() => {
         });
     }
 
-    /* ---------- loading ---------- */
-    async function startLoading() {
-        if (loadStarted) return;
-        loadStarted = true;
+    /* ---------- background preparation -------------------------------------
+       Previously all of this waited until the user entered the mind map, so
+       entering meant download + transcode + upload with a loader on screen.
+       Transcoding is the expensive part, and it does not need the mind map's
+       renderer: KTX2Loader.detectSupport() only reads context capabilities to
+       pick a target format, and scene 1's renderer — which exists for the
+       whole session, on the same GPU and driver — answers that identically.
 
-        /* Wait for the transcoder probe so the loader is created against the
-           path that actually exists. This is a HEAD request issued at page
-           start, so it has almost always settled by now. */
-        if (MINDMAP.useKTX2) {
-            await transcoderReady;
-            if (!mounted) return;
-            try {
-                ktx2Loader = new KTX2Loader()
-                    .setTranscoderPath(resolvedTranscoderPath)
-                    .detectSupport(rendererMM);
-            } catch (e) {
-                console.warn('[scene3] KTX2Loader unavailable, using image fallback.', e);
-                ktx2Loader = null;
-            }
+       So preparation now runs in the background from page load, in two phases
+       with separate concurrency limits, and mount() is left with nothing to
+       do but upload.
+       ---------------------------------------------------------------------- */
+
+    /* Same courtesy gate Assets.backfill() uses: do not speculatively pull
+       megabytes on a metered or very slow connection. */
+    function allowPrewarm() {
+        const c = navigator.connection;
+        if (!c) return true;
+        if (c.saveData) return false;
+        return !/(^|-)2g$/.test(c.effectiveType || '');
+    }
+
+    function logSummary() {
+        if (summaryLogged) return;
+        summaryLogged = true;
+        console.info(
+            `[scene3] tiles: ${ktx2Hits} via KTX2, ${ktx2Misses} via image fallback, ` +
+            `${failedTiles.size} failed (${N}${N < FULL_N ? ` of ${FULL_N}, low-power subset` : ''})`
+        );
+    }
+
+    /* A tile finished preparing. If the scene is already mounted it goes
+       straight into the upload queue; otherwise it waits in `textures` until
+       mount() drains everything at once. */
+    function notePrepared(k, tex) {
+        if (tex) textures[k] = tex;
+        else failedTiles.add(k);
+        preparedCount += 1;
+        if (mounted) enqueueUpload(k);
+        if (preparedCount >= N) logSummary();
+    }
+
+    async function ensureKtx2Loader() {
+        if (ktx2Loader || !MINDMAP.useKTX2 || ktx2Disabled) return;
+        /* Must settle first: resolvedTranscoderPath is only final once the
+           self-hosted-vs-CDN probe has answered. */
+        await transcoderReady;
+        try {
+            ktx2Loader = new KTX2Loader()
+                .setTranscoderPath(resolvedTranscoderPath)
+                .detectSupport(renderer);          // scene 1's renderer
+            ktx2Loader.setWorkerLimit(TRANSCODE_BATCH);
+        } catch (e) {
+            console.warn('[scene3] KTX2Loader unavailable, using image fallback.', e);
+            ktx2Loader = null;
         }
+    }
 
+    /* PHASE 1 — network only. Fills the HTTP cache in batches of NET_BATCH so
+       phase 2 transcodes from disk instead of racing the network. Resolves
+       when the last byte is in cache, which is what the boot sequence waits
+       on before starting the lower-priority project backfill. */
+    function warmNetwork() {
+        const list = (MINDMAP.useKTX2 && !ktx2Disabled) ? ktx2Paths : imagePaths;
+        return new Promise(resolve => {
+            let i = 0;
+            const step = () => {
+                if (i >= list.length) { resolve(); return; }
+                const batch = [];
+                for (let n = 0; n < NET_BATCH && i < list.length; n++, i++) {
+                    batch.push(fetch(list[i], { cache: 'force-cache', signal: Assets.signal }).catch(() => {}));
+                }
+                Promise.all(batch).then(() => Idle.run(step));
+            };
+            Idle.run(step);
+        });
+    }
+
+    /* PHASE 2 — transcode/decode into GPU-ready textures, TRANSCODE_BATCH at
+       a time, on the idle scheduler so it yields whenever a frame runs long. */
+    function transcodeAll() {
         const signal = Assets.signal;
-        let i = 0;
+        return new Promise(resolve => {
+            let i = 0;
+            const step = () => {
+                if (i >= N) { resolve(); return; }
+                const batch = [];
+                for (let n = 0; n < TRANSCODE_BATCH && i < N; n++, i++) {
+                    const k = i;
+                    batch.push(
+                        loadTile(k, signal)
+                            .then(tex => notePrepared(k, tex))
+                            .catch(() => notePrepared(k, null))
+                    );
+                }
+                Promise.all(batch).then(() => Idle.run(step));
+            };
+            Idle.run(step);
+        });
+    }
 
-        function step() {
-            const batch = [];
-            let n = 0;
-            while (n < 3 && i < N) {
-                const idx = i;
-                batch.push(
-                    loadTile(idx, signal)
-                        .then(tex => { textures[idx] = tex; uploadQueue.push(idx); })
-                        .catch(() => { textures[idx] = null; failedCount += 1; uploadedCount += 1; })
-                );
-                i++; n++;
-            }
-            Promise.all(batch).then(() => {
-                if (i < N && mounted) Idle.run(step);
-                else if (mounted && uploadedCount >= N) reveal();
-            });
+    /* One cheap probe before phase 1: if the .ktx2 derivatives were never
+       generated, find out from a single request rather than 76 404s, and warm
+       the source images instead. */
+    async function probeKtx2() {
+        if (!MINDMAP.useKTX2 || ktx2Disabled) return;
+        try {
+            const r = await fetch(ktx2Paths[0], { cache: 'force-cache', signal: Assets.signal });
+            if (!r.ok) throw new Error(String(r.status));
+        } catch (e) {
+            if (e && e.name === 'AbortError') return;
+            ktx2Disabled = true;
+            console.warn(`[scene3] ${ktx2Paths[0]} not reachable — using source images. Have the .ktx2 files been generated?`);
         }
-        Idle.run(step);
+    }
+
+    /* Returns a promise that resolves when the NETWORK phase is done, so the
+       boot sequence can sequence the project backfill behind it. Transcoding
+       continues in the background afterwards. */
+    function prewarm() {
+        if (prewarmStarted) return Promise.resolve();
+        prewarmStarted = true;
+        if (!allowPrewarm()) {
+            console.info('[scene3] prewarm skipped (Save-Data or slow connection).');
+            return Promise.resolve();
+        }
+        const net = probeKtx2()
+            .then(ensureKtx2Loader)
+            .then(warmNetwork);
+        net.then(transcodeAll);
+        return net;
     }
 
     /* FIX 5 — incremental GPU upload.
@@ -3616,15 +3774,25 @@ const Scene3 = (() => {
        the allocation over ~20 frames. */
     const UPLOADS_PER_FRAME = 4;
 
+    function enqueueUpload(k) {
+        if (!mounted) return;
+        if (failedTiles.has(k)) { uploadedCount += 1; maybeReveal(); return; }
+        if (textures[k]) uploadQueue.push(k);
+    }
+
+    function maybeReveal() {
+        if (uploadedCount >= N) reveal();
+    }
+
     function pumpUploads() {
         if (!rendererMM || !uploadQueue.length) return;
         let budget = UPLOADS_PER_FRAME;
         while (budget-- > 0 && uploadQueue.length) {
-            const idx = uploadQueue.shift();
-            const tex = textures[idx];
-            if (!tex) { failedCount += 1; uploadedCount += 1; continue; }
+            const k = uploadQueue.shift();
+            const tex = textures[k];
+            if (!tex) { failedTiles.add(k); uploadedCount += 1; continue; }
             try { rendererMM.initTexture(tex); } catch (e) { /* non-fatal */ }
-            const t = tiles[idx];
+            const t = tiles[k];
             if (t) {
                 t.mesh.material.map = tex;
                 t.mesh.material.needsUpdate = true;
@@ -3632,7 +3800,7 @@ const Scene3 = (() => {
             uploadedCount += 1;
         }
         /* Everything accounted for (uploaded or failed) — show the globe. */
-        if (uploadedCount >= N) reveal();
+        maybeReveal();
     }
 
     /* ---------- layout ---------- */
@@ -3663,9 +3831,6 @@ const Scene3 = (() => {
 
         loadingEl.style.opacity = 1;
         uploadedCount = 0;
-        failedCount = 0;
-        ktx2Hits = ktx2Misses = ktx2Errors = 0;
-        ktx2Disabled = false;
         revealed = false;
         uploadQueue = [];
 
@@ -3690,13 +3855,23 @@ const Scene3 = (() => {
         layout();
         unsubViewport = V.onChange(layout);
 
+        /* Make sure preparation is running (it normally started seconds ago
+           from the boot sequence; this covers a direct fast click, or a
+           connection where prewarm was skipped). */
+        prewarm();
+
+        /* Drain whatever is already prepared. On a normal visit this is all
+           of it, so entering costs only the incremental upload. Anything
+           still in flight arrives via notePrepared() -> enqueueUpload(). */
+        for (let k = 0; k < N; k++) {
+            if (textures[k] || failedTiles.has(k)) enqueueUpload(k);
+        }
+
         /* If a handful of requests stall, reveal what we have rather than
            leaving the user on a loader forever. */
         revealTimeout = setTimeout(() => {
             if (!revealed) reveal(`timeout, ${uploadedCount}/${N} ready`);
         }, REVEAL_HARD_TIMEOUT_MS);
-
-        startLoading();
     }
 
     function unmount() {
@@ -3720,7 +3895,11 @@ const Scene3 = (() => {
 
         if (controls) { controls.dispose(); controls = null; }
 
-        textures.forEach((t, i) => { if (t) t.dispose(); textures[i] = undefined; });
+        /* Textures and the KTX2 loader deliberately SURVIVE unmount. The GPU
+           copies go away with the context below, but the transcoded data
+           stays in memory, so re-entering re-uploads from RAM instead of
+           re-downloading and re-transcoding. tiles/materials/geometry are
+           rebuilt on the next mount. */
         tiles.forEach(t => t.mesh.material.dispose());
         if (hitSphere) { hitSphere.geometry.dispose(); hitSphere.material.dispose(); }
         if (tileGeo) { tileGeo.dispose(); tileGeo = null; }
@@ -3728,10 +3907,7 @@ const Scene3 = (() => {
         tiles = [];
         uploadQueue = [];
         uploadedCount = 0;
-        failedCount = 0;
         hitSphere = null;
-
-        if (ktx2Loader) { ktx2Loader.dispose(); ktx2Loader = null; }
 
         if (rendererMM) {
             if (rendererMM.domElement.parentNode) {
@@ -3749,30 +3925,14 @@ const Scene3 = (() => {
         }
         glGuard = null;
 
-        /* Reset the flags so the scene can be rebuilt on the next visit. */
-        loadStarted = false;
+        /* Reset per-mount interaction state. Preparation flags are NOT reset:
+           prewarmStarted and the prepared textures persist for the session. */
         isHovering = false;
         isPointerDown = false;
         holdFactor = 0;
         mouseMM.set(-999, -999);
     }
 
-    /* Network-only warm-up. No GL context, no decode, no GPU memory. */
-    function prefetch() {
-        if (prefetched) return;
-        prefetched = true;
-        const list = MINDMAP.useKTX2 ? ktx2Paths : imagePaths;
-        let i = 0;
-        const step = () => {
-            if (i >= list.length) return;
-            const batch = [];
-            for (let n = 0; n < 3 && i < list.length; n++, i++) {
-                batch.push(fetch(list[i], { cache: 'force-cache', signal: Assets.signal }).catch(() => {}));
-            }
-            Promise.all(batch).then(() => Idle.run(step));
-        };
-        Idle.run(step);
-    }
 
     /* ---------- frame ---------- */
     function frame(dt, time) {
@@ -3817,7 +3977,7 @@ const Scene3 = (() => {
 
             if (isHovering) {
                 const distance = _hitPoint.distanceTo(t.base);
-                const effectRadius = 1.8 + holdFactor * 0.7;
+                const effectRadius = EFFECT_RADIUS_BASE + holdFactor * EFFECT_RADIUS_HOLD;
                 const maxPush = (1.38 + holdFactor * 3.2) * protrusion;
 
                 if (distance < effectRadius) {
@@ -3850,8 +4010,12 @@ const Scene3 = (() => {
     return {
         mount,
         unmount,
-        prefetch,
+        prewarm,
+        /* The scene-1 intent signal (folder centred/hovered) still calls this;
+           it is now just an early nudge for the same background pipeline. */
+        prefetch: prewarm,
         get mounted() { return mounted; },
+        get tileCount() { return N; },
         setPointer(x, y) {
             if (!mounted) return;
             mouseMM.x = (x / V.width) * 2 - 1;
@@ -4279,9 +4443,21 @@ Loop.start();
 
 setTimeout(() => { bootFade.active = true; bootFade.t = 0; }, 100);
 
+/* Staged background preparation. Nothing here competes with scene 1's boot
+   (PMREM, shader compile, first paint), which is the window the startup
+   stutters used to live in.
+
+     1.5s  cover images for the folder carousel
+     3.0s  mind-map network warm (batched), then transcode in the background
+     then  project image backfill, once the mind map has the network to itself
+           no longer — capped at 5s so a slow connection can't starve it. */
 setTimeout(() => {
     Assets.warmCovers();
-    setTimeout(() => Assets.backfill(), 4000);
+    setTimeout(() => {
+        const mindMapNetwork = Scene3.prewarm();
+        const cap = new Promise(res => setTimeout(res, 5000));
+        Promise.race([mindMapNetwork, cap]).then(() => Assets.backfill());
+    }, 1500);
 }, 1500);
 
 setTimeout(() => {
