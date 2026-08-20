@@ -515,20 +515,16 @@
             .welcome-text::after { animation: none; }
         }
         /* ==========================================================================
-           MOBILE STYLESHEET — round 4
+           MOBILE STYLESHEET — round 5
            --------------------------------------------------------------------------
-           Everything scoped under #mobile-root. Key changes this round:
-             - fixed-height image frame (object-fit: contain) — the image never
-               drives layout, so title/description never move
-             - single dominant image per swipe, neighbours peek at the edges
-             - no casing/shadow/background behind artwork — transparent PNGs stay
-               transparent
-             - fixed-height meta block, top-aligned, collection+description in
-               warm graphite for hierarchy against the white title
-             - lighter glass (less shadow), 20px edge margins, smaller controls
-             - contact panel anchors to its top edge and opens downward
-             - gallery is a fitted grid (no scroll), back button replaces the
-               switcher on that page
+           Everything scoped under #mobile-root. Changes this round:
+             - tab-btn colour now transitions on the element that DECLARES colour
+               (the button), not on the child svg, which never worked
+             - gallery bezel moved from an inset box-shadow (occluded by the video
+               child) to an ::after overlay, so it is present in every state
+             - frosted veil + fake-glass play icon on every resting video tile
+             - four rows of two, focused tile lands on the exact vertical centre
+             - staggered home arrival after leaving the gallery
            ========================================================================== */
         :root {
             --bg: #e0e0e0;
@@ -579,8 +575,7 @@
         }
 
         /* ==========================================================================
-           1. FAKE GLASS — lighter this round: shadow cut way down, specular eased
-           back, so it reads as a thin translucent film rather than a physical slab.
+           1. FAKE GLASS
            ========================================================================== */
         #mobile-root .glass {
             position: relative;
@@ -627,9 +622,6 @@
         }
         #mobile-root #header > * { pointer-events: auto; }
 
-        /* Contact and Back both live top-right. Contact is taken out of flow so the
-           switcher keeps the left edge to itself and the expanding panel can never
-           push the row around. */
         #mobile-root #header-right {
             position: absolute;
             top: calc(env(safe-area-inset-top, 0px) + 14px);
@@ -638,6 +630,9 @@
         }
         #mobile-root #header-right > * { pointer-events: auto; }
 
+        /* The switcher is now DRAGGABLE as well as tappable: grab the thumb and
+           slide it across to change page. touch-action: pan-y keeps vertical
+           gestures free while claiming horizontal ones. */
         #mobile-root #switcher {
             position: relative;
             display: flex;
@@ -645,6 +640,7 @@
             height: var(--control-h);
             padding: 3px;
             border-radius: 999px;
+            touch-action: pan-y;
             opacity: 0;
             transform: translateY(-6px);
             transition: opacity 0.5s ease, transform 0.5s var(--ease-out);
@@ -685,11 +681,7 @@
         #mobile-root .switch-btn[aria-selected="true"] { color: var(--on-glass); }
         #mobile-root .switch-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-        /* ---- Contact ----
-           Anchored top-right and pinned by its TOP edge (top/right fixed, height
-           grows), so the panel unfolds strictly downward — nothing ever expands
-           above the button's resting line. Same cubic-bezier morph curve as the
-           desktop version. */
+        /* ---- Contact ---- */
         #mobile-root #contact {
             position: absolute;
             top: 0;
@@ -709,20 +701,11 @@
                 transform 0.5s var(--ease-out);
         }
         #mobile-root #contact.ready { opacity: 1; transform: translateY(0); }
-        /* Sized off the actual content, not guessed: "Instagram" (longest label,
-           ~67px at this size) + 16px icon + 12px icon-text gap + 24px item padding +
-           20px panel padding ≈ 139px, plus a deliberate margin for "compact control"
-           rather than "panel" — landing at 160px, down from an earlier 192px that
-           was wider than anything inside it needed. */
         #mobile-root #contact.is-open {
             width: 160px;
-            /* 4 rows x 36px + 3 x 2px gaps + 28px vertical padding */
             height: 178px;
             border-radius: var(--r-lg);
             cursor: default;
-            /* Opaque enough to fully occlude whatever sits behind it — as a pill it
-               reads as glass over the page, but as an open panel it must be legible
-               against the tab bar and artwork underneath. */
             background: rgba(238, 238, 238, 0.97);
             box-shadow:
                 inset 0 1px 0 rgba(255, 255, 255, 0.7),
@@ -787,8 +770,6 @@
             stroke: currentColor; fill: none;
             stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
         }
-        /* Sized and centred to occupy exactly the same box as the sibling SVG icons,
-           so all four rows share one text baseline and one icon column. */
         #mobile-root .be-logo {
             width: 16px; height: 16px; flex: 0 0 16px;
             display: flex; align-items: center; justify-content: center;
@@ -801,7 +782,7 @@
         #mobile-root .contact-item.copied .original { opacity: 0; transform: translateY(-3px); }
         #mobile-root .contact-item.copied .copied { opacity: 1; transform: translateY(0); }
 
-        /* ---- Back button (Gallery only) — same glass treatment as Contact ---- */
+        /* ---- Back button (Gallery only) ---- */
         #mobile-root #back-btn {
             align-self: flex-start;
             display: flex;
@@ -832,15 +813,30 @@
 
         /* ==========================================================================
            3. PAGES
+           --------------------------------------------------------------------------
+           Slightly longer cross-fade than before (0.42s vs 0.3s) so the gallery's
+           exit choreography and the home page's staggered arrival overlap instead
+           of one cutting the other off.
            ========================================================================== */
         #mobile-root .page {
             position: absolute;
             inset: 0;
             opacity: 0;
             pointer-events: none;
-            transition: opacity 0.3s ease;
+            transition: opacity 0.42s ease;
         }
         #mobile-root .page.active { opacity: 1; pointer-events: auto; }
+
+        /* Home arrival stagger. Transform-only keyframes, so they can't fight the
+           .ready/.in opacity flags each block already manages for itself. */
+        @keyframes homeRise {
+            from { transform: translateY(10px); }
+            to   { transform: translateY(0); }
+        }
+        #mobile-root #home.arrive #tabslot      { animation: homeRise 0.5s var(--ease-out) both; }
+        #mobile-root #home.arrive #project-name { animation: homeRise 0.5s var(--ease-out) 0.06s both; }
+        #mobile-root #home.arrive #carousel     { animation: homeRise 0.5s var(--ease-out) 0.12s both; }
+        #mobile-root #home.arrive #meta         { animation: homeRise 0.5s var(--ease-out) 0.18s both; }
 
         /* ==========================================================================
            4. HOME
@@ -852,8 +848,6 @@
             padding-top: calc(var(--header-h) + env(safe-area-inset-top, 0px));
         }
 
-        /* ---- project icon tab ----
-           Pushed down from the switcher for clearer separation (was 4px, now ~28px). */
         #mobile-root #tabslot {
             position: relative;
             width: 100%;
@@ -915,14 +909,14 @@
             from { opacity: 0; transform: translateY(-8px) scale(0.82); }
             to   { opacity: 1; transform: translateY(0) scale(1); }
         }
-        #mobile-root .tab-btn svg { width: 20px; height: 20px; fill: currentColor; transition: color 0.28s ease; }
+        #mobile-root .tab-btn svg { width: 20px; height: 20px; fill: currentColor; }
         /* Optical correction: Naivaa's and A Thousand Islands' source artwork carries
            more internal padding relative to its own viewBox than the other two
-           glyphs, so at identical box sizes they read visually smaller. Scaled up
-           to match perceived weight rather than measured dimensions. */
+           glyphs, so at identical box sizes they read visually smaller. */
         #mobile-root .tab-btn.icon-naivaa svg,
         #mobile-root .tab-btn.icon-a-thousand-islands svg { width: 24px; height: 24px; }
-        #mobile-root .tab-btn[aria-selected="true"] { color: var(--on-glass); }
+        /* Icons stay warm graphite regardless of selection — only the capsule pill
+           underneath indicates the active project. */
         #mobile-root .tab-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 999px; }
 
         /* ---- project name ---- */
@@ -940,12 +934,7 @@
         }
         #mobile-root #project-name.swap { opacity: 0; transform: translateY(-4px); }
 
-        /* ---- carousel ----
-           Three cards visible on a shallow 3D arc: centre full-scale and facing
-           forward, both neighbours scaled down, rotated inward and receded on Z.
-           Native scroll-snap still drives the actual swipe/momentum/snap — this is
-           a pure visual layer painted from the same scrollLeft the browser is
-           already tracking. */
+        /* ---- carousel ---- */
         #mobile-root #carousel {
             position: relative;
             flex: 1 1 auto;
@@ -980,17 +969,6 @@
             scroll-snap-stop: normal;
         }
 
-        /* Fixed frame — this is what stops the image from driving layout. Every
-           image, whatever its own aspect ratio, sits centred inside the SAME box via
-           object-fit: contain, so title/description never move as you swipe.
-
-           Rounded corners sit on the IMG itself, not on a wrapper box: with
-           object-fit: contain the img element's painted area is exactly the artwork,
-           so the radius clips the artwork's own edges rather than a container the
-           artwork is letterboxed inside — which is what previously produced a
-           visible grey slab behind transparent PNGs. No bezel, no mat, no background,
-           no shadow — just the artwork, presented directly. Named exception files
-           (logos/renders) get the .no-round modifier and stay square-edged. */
         #mobile-root .frame {
             position: relative;
             width: 100%;
@@ -1003,16 +981,6 @@
             display: block;
             max-width: 100%;
             max-height: 100%;
-            /* Fallback only — JS sizes each image to its exact rendered box once
-               loaded (see sizeImage()), because border-radius on an object-fit:
-               contain image only clips the element's OWN box, not the visible
-               letterboxed picture inside it. If the image doesn't fill that box
-               edge-to-edge (i.e. almost always, since aspect ratios vary), the
-               rounding lands on invisible transparent margin and never shows up
-               against the actual artwork. Sizing the element to match its content
-               exactly is what makes the radius visible on every image regardless
-               of its own aspect ratio, while the frame itself stays a fixed box —
-               same "nothing shifts while swiping" guarantee as before. */
             object-fit: contain;
             border-radius: var(--r-lg);
             opacity: 0;
@@ -1021,18 +989,7 @@
         #mobile-root .frame img.in { opacity: 1; }
         #mobile-root .frame img.no-round { border-radius: 0; }
 
-        /* ---- meta: collection + description ----
-           Fixed height (reserved for the longest real description at this size), so
-           swapping between a one-line and a four-line description never changes how
-           much vertical space the carousel above it gets — this is the other half of
-           the "nothing shifts" fix, alongside the image frame. Text is top-aligned
-           within the block for the same reason: a short description just leaves
-           quiet space below it rather than re-centring.
-
-           Hierarchy is carried by weight+colour, not size: title (above) stays white
-           and bold; collection name sits in warm graphite as a secondary label;
-           description sits smaller still, same graphite at reduced opacity, so all
-           three read as distinct tiers rather than three same-weight lines. */
+        /* ---- meta: collection + description ---- */
         #mobile-root #meta {
             flex: 0 0 auto;
             width: 100%;
@@ -1056,10 +1013,6 @@
             color: var(--ink);
             margin-bottom: 7px;
         }
-        /* Position within the current collection — the only wayfinding cue the
-           single-image carousel has, since there's deliberately no peeking
-           neighbour. Sized to stay quiet: 4px dots, never competing with the type
-           around them. */
         #mobile-root #position-dots {
             display: flex;
             justify-content: center;
@@ -1089,9 +1042,12 @@
         /* ==========================================================================
            5. GALLERY
            --------------------------------------------------------------------------
-           Fitted grid — everything visible at once, nothing scrolls. Tiles are
-           absolutely positioned by JS (computed per viewport), CSS only supplies the
-           visual treatment.
+           Four rows of two. The previous three-per-row grid was sized height-first
+           and then uniformly shrunk to satisfy the width constraint, which on a
+           390px phone produced ~114px-wide tiles inside 744px of available height —
+           a small object stranded in a large field, which is what read as
+           "off-centre and too high". Two per row fills the frame properly and lets
+           the composition sit on the true vertical centre.
            ========================================================================== */
         #mobile-root #gallery {
             overflow: hidden;
@@ -1101,11 +1057,11 @@
         #mobile-root #gallery-prompt {
             position: absolute;
             left: 0; right: 0;
-            top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 18px);
+            top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 36px);
             text-align: center;
             font-size: 1rem;
             font-weight: 400;
-            color: var(--on-glass);
+            color: var(--ink);
             letter-spacing: 0.1px;
             padding: 0 24px;
             opacity: 0;
@@ -1121,9 +1077,6 @@
         }
         @keyframes promptPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 
-        /* perspective is what lets a focused tile genuinely translate toward the
-           viewer on Z rather than merely scaling — matches the Pulse engine's
-           3D-space model. */
         #mobile-root #stack {
             position: relative;
             width: 100%;
@@ -1132,8 +1085,6 @@
             transform-style: preserve-3d;
         }
 
-        /* Entrance is driven by the physics integrator (tiles are seeded far
-           off-position and spring in), so there is no CSS entrance keyframe. */
         #mobile-root .tile {
             position: absolute;
             top: 0; left: 0;
@@ -1143,27 +1094,18 @@
         }
         #mobile-root .tile.visible { opacity: 1; }
 
-        /* Idle float now comes from the physics integrator (sine bob + rotation),
-           matching the Pulse engine, so there are no CSS drift keyframes to fight
-           the JS transform. */
         #mobile-root .tile-float { width: 100%; height: 100%; }
 
-        /* The only element JS transforms. Resting state is just the video cover —
-           no title, no description overlay. Radius is tightened to read as a
-           screen/device object rather than a rounded card — roughly proportional to
-           real device bezel radii rather than app-icon-style rounding. The hairline
-           inset ring is a permanent, restrained version of the "glass" language used
-           elsewhere in the interface (same inset-highlight technique as the nav
-           pills), present at rest — not just while interacting. */
+        /* The only element JS transforms. Background is a flat neutral rather than
+           black, so a tile whose poster hasn't resolved yet reads as an empty
+           frame rather than a hole. */
         #mobile-root .tile-body {
             position: relative;
             width: 100%; height: 100%;
             border-radius: 12px;
             overflow: hidden;
-            background: #000;
+            background: #bdbdbd;
             box-shadow:
-                inset 0 0 0 1.5px rgba(255, 255, 255, 0.22),
-                inset 0 1px 0 rgba(255, 255, 255, 0.32),
                 0 10px 26px rgba(0, 0, 0, 0.20),
                 0 2px 5px rgba(0, 0, 0, 0.09);
             transform-origin: center center;
@@ -1172,17 +1114,36 @@
             will-change: transform;
             transition: box-shadow 0.4s ease, opacity 0.35s ease;
         }
-        #mobile-root .tile.armed .tile-body,
-        #mobile-root .tile.focused .tile-body {
+
+        /* THE BEZEL.
+           This used to be an `inset` box-shadow on .tile-body. Inset shadows paint
+           on the element's own background layer, BELOW in-flow children — and the
+           video/poster fills the box at 100%/100%, so the ring was completely
+           covered. It only became visible mid-transform, when the 3D compositor
+           rasterised parent and child into separate layers and edge antialiasing
+           let a hairline bleed through. Hence "only appears while moving".
+
+           Moved to an ::after overlay above the media (z-index 3), so it is
+           genuinely present in every state. 1px instead of 1.5px and lower alpha:
+           smaller and more understated, as asked. */
+        #mobile-root .tile-body::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            border-radius: inherit;
+            pointer-events: none;
             box-shadow:
-                inset 0 0 0 1.5px rgba(255, 255, 255, 0.48),
-                inset 0 1px 0 rgba(255, 255, 255, 0.38),
-                0 20px 40px rgba(0, 0, 0, 0.30);
+                inset 0 0 0 1px rgba(255, 255, 255, 0.20),
+                inset 0 1px 0 rgba(255, 255, 255, 0.26);
+            transition: box-shadow 0.35s ease;
         }
-        /* Focus-forward is reinforced by dimming everything else — a cheap opacity
-           cue that seconds the Z-recede already happening, so the depth move reads
-           through brightness too. */
-        #mobile-root .tile.dimmed .tile-body { opacity: 0.55; }
+        #mobile-root .tile.focused .tile-body::after {
+            box-shadow:
+                inset 0 0 0 1px rgba(255, 255, 255, 0.34),
+                inset 0 1px 0 rgba(255, 255, 255, 0.34);
+        }
+
         #mobile-root .tile-body video,
         #mobile-root .tile-body img.poster {
             width: 100%; height: 100%;
@@ -1195,11 +1156,41 @@
         }
         #mobile-root .tile.live .tile-body img.poster { opacity: 0; }
 
+        /* Fake-glass play mark. Present on EVERY resting tile — it's the signal
+           that these are videos and that one has to be chosen to watch it. */
+        #mobile-root .tile-play {
+            position: absolute;
+            z-index: 4;
+            left: 50%; top: 50%;
+            width: 38px; height: 38px;
+            margin: -19px 0 0 -19px;
+            border-radius: 50%;
+            pointer-events: none;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(255, 255, 255, 0.34);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.55),
+                0 2px 8px rgba(0, 0, 0, 0.14);
+            transition: opacity 0.3s ease, transform 0.35s var(--ease-out);
+        }
+        #mobile-root .tile-play svg {
+            width: 13px; height: 15px;
+            margin-left: 2px;
+            fill: #ffffff;
+        }
+        #mobile-root .tile.focused .tile-play { transform: scale(1.12); }
+        #mobile-root .tile.playing .tile-play { opacity: 0; transform: scale(0.86); }
+
         /* ==========================================================================
            6. REDUCED MOTION
            ========================================================================== */
         @media (prefers-reduced-motion: reduce) {
             #mobile-root #gallery-prompt.on { animation: none; }
+            #mobile-root #home.arrive #tabslot,
+            #mobile-root #home.arrive #project-name,
+            #mobile-root #home.arrive #carousel,
+            #mobile-root #home.arrive #meta { animation: none; }
             #mobile-root * { scroll-behavior: auto !important; }
         }
 
@@ -1398,20 +1389,23 @@
 <script type="module">
 function initMobile() {
     /* ==========================================================================
-       MOBILE EXPERIENCE — round 4
+       MOBILE EXPERIENCE — round 5
        --------------------------------------------------------------------------
-       Pure ES module (or inlined inside initMobile() in the single-file build).
-       Imports nothing — no three.js, no GSAP.
+       Pure ES module. Imports nothing — no three.js, no GSAP.
 
        Changes this round:
-         - carousel: fixed image frame, single-image-peek, no windowing (all
-           images requested up front, first three decoded eagerly)
-         - no Welcome text, no Swipe-to-Navigate prompt
-         - meta block fixed height, top-aligned, graphite hierarchy
-         - lighter glass, 20px edges, smaller controls, contact anchors at top
-         - gallery: fitted grid (no scroll), directional converge entrance,
-           prompt appears only after tiles land, immediate (non-armed) drag,
-           velocity-seeded release physics, Back button replaces the switcher
+         - carousel: fixed-duration expo tween replaced by a retargetable spring
+           with a real per-frame paint layer (arc, scale, rotation, opacity), so
+           a long jump visibly TRAVELS instead of teleporting
+         - tab indicator driven from the carousel's fractional index during a jump
+         - Home/Gallery switcher is draggable as well as tappable
+         - gallery: four rows of two, focused tile lands on the exact vertical
+           centre, snappy (not springy) return, idle bob at 30fps
+         - play decoupled from focus: every resting tile shows a frosted poster
+           plus a fake-glass play mark; only the focused tile ever holds a decoder
+         - posters generated at runtime from each clip's MIDDLE frame, one at a
+           time, so no build step is required
+         - gallery -> home is a staggered exit + arrival rather than a cut
        ========================================================================== */
 
     const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
@@ -1536,6 +1530,8 @@ function initMobile() {
         'a-thousand-islands': `<svg viewBox="0 0 764.5 703.5" aria-hidden="true"><path fill-rule="evenodd" d="M323.8,239.7c33.9-2.5,76.4-1.2,110.4.8,26.8,1.6,36.1,2.4,59.5,16.4,19.8,11.9,80.1,51.4,92.7,67.3s9.7,16.6,11.5,25.8c3.9,20,5.3,72-2.5,90.3-11.2,26.3-47.9,26-72.2,24.1-53.5-4.2-101.8-74.1-146.8-69.9-30.1,2.8-73.8,47.8-104.8,61.3-27.1,11.8-88.2,18-102.5-15.1-8-18.7-7.1-82.5,0-101.8s50.2-47.9,69.2-60.8c29-19.8,48.7-35.7,85.6-38.4ZM374.3,258.9c-34.3,4.7-75.8,56.4-116.7,67.4-28.5,7.7-64.9-4.8-78.6,29.8s-9.6,69.5,19.2,72.2,67.2-37.5,94.9-48.4c21-8.2,55.1-4.2,78.5-4.5s76.2-7.1,106.5,7.7c25.8,12.7,98.4,80.6,110.3,20.2,4-20.5,1.7-50.3-15.9-64-16.6-13-39.2-7.5-58.6-11.2-33.8-6.5-60.7-32.9-88.4-51.2-16.7-11-29.7-20.9-51.2-18Z"/></svg>`
     };
 
+    const PLAY_GLYPH = '<svg viewBox="0 0 12 14" aria-hidden="true"><path d="M1 1v12l10-6z"/></svg>';
+
     /* ==========================================================================
        TICKER — one rAF for the whole app; stops itself when nothing subscribes.
        ========================================================================== */
@@ -1587,11 +1583,62 @@ function initMobile() {
         moveThumb(false);
         Contact.close();
 
-        if (page === 'gallery') Gallery.enter();
-        else Gallery.leave();
+        if (page === 'gallery') {
+            pages.home.classList.remove('arrive');
+            Gallery.enter();
+        } else {
+            Gallery.leave();
+            /* Restart the staggered arrival every time we come back. */
+            pages.home.classList.remove('arrive');
+            void pages.home.offsetWidth;
+            pages.home.classList.add('arrive');
+        }
     }
 
-    switchBtns.forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));
+    /* ---- draggable switcher ----
+       The thumb can be grabbed and slid across, not just tapped. Nearest slot on
+       release wins, and a drag suppresses the click that would otherwise follow. */
+    let sDrag = false, sMoved = false, sStartX = 0, sBaseX = 0;
+
+    const thumbX = () => {
+        const m = /translateX\(([-\d.]+)px\)/.exec(switchThumb.style.transform);
+        return m ? parseFloat(m[1]) : 0;
+    };
+    const slotX = (i) => switchBtns[i].offsetLeft - 3;
+
+    switcher.addEventListener('pointerdown', (e) => {
+        sDrag = true;
+        sMoved = false;
+        sStartX = e.clientX;
+        sBaseX = thumbX();
+        switchThumb.style.transition = 'none';
+        try { switcher.setPointerCapture(e.pointerId); } catch (err) {}
+    }, { passive: true });
+
+    switcher.addEventListener('pointermove', (e) => {
+        if (!sDrag) return;
+        const dx = e.clientX - sStartX;
+        if (Math.abs(dx) > 4) sMoved = true;
+        switchThumb.style.transform =
+            `translateX(${clamp(sBaseX + dx, slotX(0), slotX(1))}px)`;
+    }, { passive: true });
+
+    function endSwitchDrag() {
+        if (!sDrag) return;
+        sDrag = false;
+        switchThumb.style.transition = '';
+        if (!sMoved) { moveThumb(false); return; }
+        const mid = (slotX(0) + slotX(1)) / 2;
+        const target = thumbX() > mid ? 'gallery' : 'home';
+        if (target === currentPage) moveThumb(false);
+        else goto(target);
+    }
+    switcher.addEventListener('pointerup', endSwitchDrag, { passive: true });
+    switcher.addEventListener('pointercancel', endSwitchDrag, { passive: true });
+
+    switchBtns.forEach(b => b.addEventListener('click', () => {
+        if (!sMoved) goto(b.dataset.page);
+    }));
     backBtn.addEventListener('click', () => goto('home'));
 
     /* ==========================================================================
@@ -1627,6 +1674,11 @@ function initMobile() {
 
     /* ==========================================================================
        PROJECT TAB
+       --------------------------------------------------------------------------
+       The indicator moves slot-to-slot on a plain CSS transition — constant,
+       predictable speed regardless of how far the jump is. The icons themselves
+       never change colour; only the capsule pill indicates which project is
+       active.
        ========================================================================== */
     const Tab = (() => {
         const bar = document.getElementById('tabbar');
@@ -1707,22 +1759,8 @@ function initMobile() {
         return { morph, setActive, layout };
     })();
 
-    /* ==========================================================================
-       CAROUSEL
-       --------------------------------------------------------------------------
-       One dominant image per swipe; neighbours peek at the edges with a plain
-       opacity fade — no scale/rotate/translate math needed, native scroll
-       positions everything. Every image sits in a FIXED-size frame via
-       object-fit: contain, so the image never drives layout regardless of its
-       own aspect ratio. No windowing: every image's src is set immediately —
-       ~40 compressed images is trivial bandwidth, and the previous
-       attach-near/detach-far scheme was the direct cause of visible empty
-       shells when swiping quickly.
-       ========================================================================== */
     /* Named exceptions: these files present full-bleed (logos, product renders)
-       rather than rounded — corner radius would fight their own clean edges.
-       Matched on filename only, so this stays correct if any of these ever
-       move folders. */
+       rather than rounded — corner radius would fight their own clean edges. */
     const NO_ROUND = new Set([
         'home-front.webp', 'training-front.webp',
         'naivaalogo.png', 'athousandislandslogo.png', 'alex.png'
@@ -1732,13 +1770,15 @@ function initMobile() {
     /* ==========================================================================
        CAROUSEL
        --------------------------------------------------------------------------
-       One dominant image per swipe; no peeking neighbours, no 3D, no bezel/mat —
-       plain rounded-corner artwork (square corners for the named exceptions
-       above). Every image sits in a FIXED-size frame via object-fit: contain,
-       so the image never drives layout regardless of its own aspect ratio. No
-       windowing: every image's src is set immediately — ~40 compressed images
-       is trivial bandwidth, and an attach-near/detach-far scheme was the direct
-       cause of visible empty shells when swiping quickly.
+       One dominant image per swipe. Every image sits in a FIXED-size frame via
+       object-fit: contain, so it never drives layout. No windowing: every src is
+       set immediately. A tap on a distant tab runs a single fixed-duration
+       expo-out tween on scrollLeft — no per-frame paint, no spring, no tilt.
+
+       The one change kept from round 4: jumpTo() tags each run with a
+       generation counter and the running tween checks it every frame, so a
+       second tap cancels the first instead of the two fighting over scrollLeft.
+       That was a genuine correctness bug, not a feel change.
        ========================================================================== */
     const Carousel = (() => {
         const el = document.getElementById('carousel');
@@ -1789,7 +1829,7 @@ function initMobile() {
 
         /* Sizes an image to exactly match its own rendered content within the
            fixed frame — this is what makes the corner radius actually visible
-           (see the CSS comment) while the frame itself never changes size. */
+           while the frame itself never changes size. */
         function sizeImage(i) {
             const n = natural[i];
             if (!n || !n.w || !n.h || !frameW || !frameH) return;
@@ -1800,10 +1840,6 @@ function initMobile() {
             imgs[i].style.height = Math.round(h) + 'px';
         }
 
-        /* No windowing: every image requested immediately. The three around the
-           starting index (see start()) are given fetch priority and decoded
-           eagerly, so the very first thing the user sees is never a
-           placeholder. */
         function loadAll() {
             imgs.forEach((img, i) => {
                 const url = derivedURL(CARDS[i].src, window.innerWidth * 0.86);
@@ -1839,10 +1875,6 @@ function initMobile() {
             if (revealed) setMeta(c.collection, c.desc, c.posInCollection, c.collectionCount);
         }
 
-        /* Flushes the current (already-tracked) project/collection/description
-           to the DOM the moment the tab bar has finished landing — the "which
-           project is this" UI arrives together with the tab, decoupled from the
-           carousel's own earlier entrance. */
         function reveal() {
             if (revealed) return;
             revealed = true;
@@ -1862,10 +1894,6 @@ function initMobile() {
             nameTimer = setTimeout(() => { nameEl.textContent = text; nameEl.classList.remove('swap'); }, 170);
         }
 
-        /* Small dot row showing position within the current collection — the
-           only wayfinding cue the single-image carousel has, since there's
-           deliberately no peeking neighbour to imply "more of these". Rebuilt
-           per collection change; a handful of DOM nodes, negligible cost. */
         let dotCount = -1;
         function renderDots(total, activeIdx) {
             if (total !== dotCount) {
@@ -1880,9 +1908,6 @@ function initMobile() {
             [...dotsEl.children].forEach((d, i) => d.classList.toggle('active', i === activeIdx));
         }
 
-        /* Collection name and description fade out together, but settle back in
-           staggered — collection first, description ~70ms behind — echoing the
-           same stagger the tab icons and gallery tiles already use elsewhere. */
         function setMeta(collection, desc, posInCollection, collectionCount) {
             clearTimeout(metaTimer);
             clearTimeout(metaTimer2);
@@ -1899,11 +1924,10 @@ function initMobile() {
             }, 150 + 70);
         }
 
-        /* Fixed duration, not distance-based — same reasoning as the tab
-           indicator: a plain, constant-speed tween is what removed the stutter
-           there, and there's no reason for the carousel's own jump to behave
-           differently. */
         const JUMP_MS = 340;
+        let runGen = 0;   /* bumped on every jumpTo() call; a stale run() sees a
+                             mismatch and stops itself instead of fighting the
+                             newest tween over scrollLeft. */
         function jumpTo(index) {
             const target = clamp(index, 0, CARDS.length - 1) * slideW;
             const from = el.scrollLeft;
@@ -1920,8 +1944,10 @@ function initMobile() {
 
             if (REDUCED) { el.scrollLeft = target; el.classList.remove('tweening'); tweening = false; paint(); return; }
 
+            const gen = ++runGen;
             const t0 = performance.now();
             Ticker.add(function run() {
+                if (gen !== runGen) return false;
                 const p = clamp((performance.now() - t0) / JUMP_MS, 0, 1);
                 const e = p === 1 ? 1 : 1 - Math.pow(2, -10 * p);
                 el.scrollLeft = from + delta * e;
@@ -1962,95 +1988,133 @@ function initMobile() {
     })();
 
     /* ==========================================================================
+       POSTER QUEUE
+       --------------------------------------------------------------------------
+       No build step required. Each job spins up a throwaway <video>, seeks to
+       the MIDDLE of the clip rather than frame 0 — several of these clips open
+       on black or on a near-empty frame, which is why a first-frame capture
+       produced dark tiles — and paints it to a canvas.
+
+       Runs with bounded concurrency (MAX_WORKERS) rather than strictly one at a
+       time: this queue is started at BOOT, not gated behind opening the gallery,
+       so it needs to clear all 8 jobs well before a user who taps straight to
+       Gallery gets there. A handful of throwaway decoders overlapping for a
+       second or two at page load is a bounded, one-time cost, not a standing
+       one — each is torn down the moment its frame is captured.
+
+       If real posters are ever generated into assets/_posters/ this becomes a
+       no-op for any tile whose poster file loads first.
+       ========================================================================== */
+    const PosterQueue = (() => {
+        const jobs = [];
+        let activeWorkers = 0;
+        const MAX_WORKERS = 3;
+
+        function pump() {
+            while (activeWorkers < MAX_WORKERS && jobs.length) {
+                activeWorkers++;
+                runOne(jobs.shift());
+            }
+        }
+
+        function runOne({ src, img }) {
+            const v = document.createElement('video');
+            v.muted = true; v.playsInline = true; v.preload = 'auto';
+            v.setAttribute('playsinline', ''); v.setAttribute('muted', '');
+            let done = false;
+
+            const finish = () => {
+                if (done) return;
+                done = true;
+                try { v.removeAttribute('src'); v.load(); } catch (e) {}
+                activeWorkers--;
+                pump();
+            };
+
+            const grab = () => {
+                if (done) return;
+                const w = v.videoWidth, h = v.videoHeight;
+                if (!w || !h) { finish(); return; }
+                try {
+                    const c = document.createElement('canvas');
+                    const sc = Math.min(1, 640 / w);
+                    c.width = Math.round(w * sc);
+                    c.height = Math.round(h * sc);
+                    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+                    img.src = c.toDataURL('image/jpeg', 0.82);
+                    img.style.opacity = '';
+                } catch (e) {
+                    /* Tainted canvas (cross-origin) or decode failure — the tile
+                       keeps its flat fill and play mark. Degraded, not broken. */
+                }
+                finish();
+            };
+
+            v.addEventListener('loadedmetadata', () => {
+                const d = isFinite(v.duration) && v.duration > 0 ? v.duration : 2;
+                try { v.currentTime = Math.max(0.1, d / 2); } catch (e) { grab(); }
+            }, { once: true });
+            v.addEventListener('seeked', grab);
+            v.addEventListener('error', finish, { once: true });
+            setTimeout(() => { if (!done) { grab(); finish(); } }, 6000);
+
+            v.src = src;
+            v.load();
+        }
+
+        return { add(src, img) { jobs.push({ src, img }); pump(); } };
+    })();
+
+    /* ==========================================================================
        GALLERY
        --------------------------------------------------------------------------
-       Everything fits in the viewport at once — no page scroll — which is what
-       makes the drag interaction unambiguous: there's no competing gesture to
-       disambiguate against, so a drag can start the instant real movement is
-       detected rather than needing a long-press to "arm" first.
+       Four rows of two, fitted to the viewport — nothing scrolls, so a drag can
+       begin the instant real movement is detected.
+
+       PLAY IS DECOUPLED FROM FOCUS. At rest every tile shows a poster and a
+       fake-glass play mark: no tile holds a video decoder at all. Tapping a
+       tile focuses it (propelled to the exact vertical centre of the viewport);
+       tapping its centre starts playback. It loops up to LOOP_LIMIT times and
+       then stops and re-offers the play mark, so an unattended tab doesn't decode
+       forever.
        ========================================================================== */
-    /* Runtime first-frame capture, used only when a pre-generated poster is
-       missing. Grabs frame 0 via a throwaway <video>, paints it to a canvas, and
-       swaps the result into the given <img>. */
-    function captureFirstFrame(src, imgEl) {
-        let done = false;
-        const v = document.createElement('video');
-        v.muted = true; v.playsInline = true;
-        /* 'auto' rather than 'metadata': loadeddata (and therefore a paintable
-           frame) is not guaranteed to fire with metadata-only preload. */
-        v.preload = 'auto';
-        v.setAttribute('playsinline', ''); v.setAttribute('muted', '');
-
-        const cleanup = () => { try { v.removeAttribute('src'); v.load(); } catch (e) {} };
-
-        const grab = () => {
-            if (done) return;
-            try {
-                const w = v.videoWidth, h = v.videoHeight;
-                if (!w || !h) return;
-                const c = document.createElement('canvas');
-                /* Cap the captured frame — it only ever displays at tile size. */
-                const scale = Math.min(1, 640 / w);
-                c.width = Math.round(w * scale);
-                c.height = Math.round(h * scale);
-                c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-                imgEl.src = c.toDataURL('image/jpeg', 0.82);
-                imgEl.style.display = '';
-                imgEl.style.opacity = '';
-                done = true;
-            } catch (e) { /* tainted canvas or decode issue — leave the tile black */ }
-            cleanup();
-        };
-
-        /* Either path can win depending on browser: some fire seeked, some are
-           already paintable at loadeddata. grab() is idempotent. */
-        v.addEventListener('loadeddata', () => {
-            grab();
-            if (!done) { try { v.currentTime = 0.04; } catch (e) {} }
-        }, { once: true });
-        v.addEventListener('seeked', grab);
-        v.addEventListener('canplay', grab);
-        v.addEventListener('error', cleanup, { once: true });
-        setTimeout(() => { if (!done) { grab(); cleanup(); } }, 4000);
-
-        v.src = src;
-        v.load();
-    }
-
     const Gallery = (() => {
         const scroller = document.getElementById('gallery');
         const stack = document.getElementById('stack');
         const prompt = document.getElementById('gallery-prompt');
 
         const tiles = [];
-        let entered = false;
         let focusIdx = -1;
-        let activeIdx = -1;
-        let userPaused = new Set();
         let ticking = false;
         let running = false;
+        let restoring = false;
         let promptShown = false;
         let promptDismissed = false;
         let promptTimer = null;
+        let lastWrite = 0;
+        let visibleTimers = [];
+
+        const LOOP_LIMIT = 3;
 
         VIDEOS.forEach((v, i) => {
             const tile = document.createElement('div');
-            tile.className = 'tile' + (i % 3 === 1 ? ' v2' : i % 3 === 2 ? ' v3' : '');
+            tile.className = 'tile';
 
             const float = document.createElement('div');
             float.className = 'tile-float';
-            float.style.width = '100%'; float.style.height = '100%';
 
             const body = document.createElement('div');
             body.className = 'tile-body';
 
             const video = document.createElement('video');
-            video.muted = true; video.loop = true; video.playsInline = true;
+            video.muted = true;
+            /* loop is counted manually so we can stop after LOOP_LIMIT passes. */
+            video.loop = false;
+            video.playsInline = true;
             video.setAttribute('playsinline', ''); video.setAttribute('muted', '');
             video.preload = 'none';
             video.disablePictureInPicture = true;
             video.setAttribute('disableremoteplayback', '');
-            video.poster = POSTER_DIR + stripExt(v.src) + '.webp';
 
             const s1 = document.createElement('source');
             s1.dataset.src = MOBILE_VIDEO_DIR + stripExt(v.src) + '.mp4';
@@ -2059,39 +2123,34 @@ function initMobile() {
             s2.dataset.src = v.src;
             video.append(s1, s2);
 
-            /* Posters load immediately, unconditionally — never gated, so a
-               tile is never blank.
-
-               If build-assets.sh hasn't generated the poster files yet, the <img>
-               404s. Rather than leaving a black tile, we then grab the real first
-               frame straight from the video at runtime: load just enough of it,
-               seek to frame 0, paint to a canvas, and use that as the poster.
-               Costs one brief metadata fetch per tile and is discarded once the
-               generated posters exist. */
+            /* Poster: pre-generated file if one exists, otherwise the runtime
+               middle-frame capture fills it in. */
             const poster = document.createElement('img');
             poster.className = 'poster';
-            poster.decoding = 'async'; poster.alt = '';
+            poster.decoding = 'async';
+            poster.alt = '';
+            poster.style.opacity = '0';
             poster.src = POSTER_DIR + stripExt(v.src) + '.webp';
+            poster.addEventListener('load', function () { this.style.opacity = ''; }, { once: true });
             poster.addEventListener('error', function () {
-                /* Clear the failed src first, or the browser keeps painting its
-                   broken-image glyph until the capture resolves. */
+                /* Clear the failed src or the browser paints its broken-image
+                   glyph; the queued capture will supply one shortly. */
                 this.removeAttribute('src');
                 this.style.opacity = '0';
-                captureFirstFrame(v.src, this);
             }, { once: true });
 
-            body.append(video, poster);
+            const play = document.createElement('div');
+            play.className = 'tile-play';
+            play.innerHTML = PLAY_GLYPH;
+
+            body.append(video, poster, play);
             float.appendChild(body);
             tile.appendChild(float);
             stack.appendChild(tile);
 
-            video.addEventListener('playing', () => tile.classList.add('playing', 'live'), { passive: true });
-            video.addEventListener('pause', () => tile.classList.remove('playing'), { passive: true });
-
-            tiles.push({
-                i, el: tile, float, body, video, sources: [s1, s2], attached: false,
-                /* resting slot, expressed as an offset from the tile's CSS
-                   left/top (which layout() sets to the slot position) */
+            const rec = {
+                i, el: tile, float, body, video, posterEl: poster,
+                srcFull: v.src, sources: [s1, s2], attached: false, loops: 0,
                 baseX: 0, baseY: 0, baseRotZ: 0,
                 focusX: 0, focusY: 0, focusZ: 0,
                 w: 0, h: 0, cx: 0, cy: 0,
@@ -2099,18 +2158,43 @@ function initMobile() {
                 vx: 0, vy: 0, vz: 0, vRotX: 0, vRotY: 0, vRotZ: 0,
                 dragOffsetX: 0, dragOffsetY: 0,
                 dragging: false
-            });
+            };
+
+            video.addEventListener('playing', () => tile.classList.add('playing', 'live'), { passive: true });
+            video.addEventListener('pause', () => tile.classList.remove('playing'), { passive: true });
+            video.addEventListener('ended', () => {
+                rec.loops += 1;
+                if (rec.loops < LOOP_LIMIT) {
+                    try { video.currentTime = 0; } catch (e) {}
+                    const p = video.play();
+                    if (p && p.catch) p.catch(() => {});
+                } else {
+                    /* Three passes with no engagement — stop, restore the poster
+                       and re-offer the play mark. */
+                    rec.loops = 0;
+                    try { video.currentTime = 0; } catch (e) {}
+                    tile.classList.remove('playing', 'live');
+                }
+            }, { passive: true });
+
+            tiles.push(rec);
         });
 
-        /* ---- physics config, carried over from the Pulse engine ----
-           Same tension/friction pairs and the same frame-rate-independent
-           integration, so the weight and springiness match the desktop tiles.
-           tension.hover is the "selected" spring — noticeably tighter than the
-           idle drift, which is what makes a focused tile snap forward with
-           intent and then settle. */
+        /* Posters are part of the initial page load, not gated behind opening
+           the gallery. Gallery is a prominent, one-tap-away entry point and
+           should feel complete the instant it's opened, not fill in tile by
+           tile after the fact. */
+        tiles.forEach(t => PosterQueue.add(t.srcFull, t.posterEl));
+
+        /* ---- physics config ----
+           `restore` is the dedicated return-home spring — heavily damped,
+           snappy, deliberately not bouncy. It replaced the old approach of
+           reusing the idle spring (0.0045) for the return, which was roughly
+           five times weaker than the one that threw the tile forward (0.022)
+           and was the entire perceived cooldown. */
         const PHYS = {
-            tension: { default: 0.0045, hover: 0.022, drag: 0.15 },
-            friction: { default: 0.86, hover: 0.90, drag: 0.75 },
+            tension:  { default: 0.0045, hover: 0.022, drag: 0.15, restore: 0.060 },
+            friction: { default: 0.86,   hover: 0.90,  drag: 0.75, restore: 0.740 },
             maxVelocity: 100,
             idleBobAmplitude: 7,
             idleRotAmplitude: 1.1,
@@ -2129,7 +2213,25 @@ function initMobile() {
         let lastFrame = 0;
 
         function tick() {
+            /* Checked first and unconditionally — the 30fps throttle below has
+               its own early-return, and if !running were only handled at the
+               bottom of this function, hitting the throttle right after leave()
+               sets running=false would skip the ticking=false cleanup. That left
+               `ticking` stuck true forever, which made every kick() after the
+               first leave() a silent no-op — the physics loop never restarted,
+               so tiles just sat at their off-screen entrance seed on every visit
+               after the first. */
+            if (!running) { ticking = false; lastFrame = 0; return false; }
+
             const now = performance.now();
+
+            /* Idle bob runs at 30fps. Nothing is being interacted with, nobody is
+               tracking an individual tile, and it halves the transform writes. */
+            const idleOnly = !restoring && focusIdx === -1 &&
+                             !tiles.some(t => t.dragging);
+            if (idleOnly && now - lastWrite < 32) return true;
+            lastWrite = now;
+
             let dt = lastFrame ? (now - lastFrame) / 1000 : 1 / 60;
             lastFrame = now;
             dt = Math.min(dt, 0.05);
@@ -2143,16 +2245,17 @@ function initMobile() {
                 const isSelected = focusIdx === i;
                 const isDraggingThis = t.dragging;
                 const someoneSelected = focusIdx !== -1;
-                const isIdle = !isSelected && !someoneSelected && !isDraggingThis;
+                const isIdle = !isSelected && !someoneSelected && !isDraggingThis && !restoring;
 
                 const tension = (isSelected ? PHYS.tension.hover
                     : isDraggingThis ? PHYS.tension.drag
+                    : restoring ? PHYS.tension.restore
                     : PHYS.tension.default) * PHYS.calm;
                 const friction = isSelected ? PHYS.friction.hover
                     : isDraggingThis ? PHYS.friction.drag
+                    : restoring ? PHYS.friction.restore
                     : PHYS.friction.default;
 
-                /* Base target = resting slot + gentle idle bob/rotation. */
                 let tx = t.baseX;
                 let ty = t.baseY + Math.sin(simTime * 1.2 + i * 2) * PHYS.idleBobAmplitude;
                 let tz = 0;
@@ -2161,22 +2264,20 @@ function initMobile() {
                 let tRotZ = t.baseRotZ + Math.sin(simTime * 1.3 + i) * PHYS.idleRotAmplitude;
 
                 if (isSelected) {
-                    /* Propel forward to become the main thing on screen: centre
-                       of the viewport, pushed toward the viewer on Z. focusZ is
-                       solved per-viewport in layout() so the tile lands at the
-                       intended on-screen width under the container's
-                       perspective. */
+                    /* focusZ is solved per-viewport in layout() so the tile lands
+                       at a predictable on-screen width, and focusY targets the
+                       EXACT vertical centre of the viewport. */
                     tx = t.focusX; ty = t.focusY; tz = t.focusZ;
                     tRotX = 0; tRotY = 0; tRotZ = 0;
                     t.el.style.zIndex = 100;
                 } else if (someoneSelected) {
-                    /* Everything else drifts outward and recedes — the Pulse
-                       engine's "background" state. */
-                    tx = t.baseX * 1.5;
-                    ty = t.baseY * 1.5;
-                    tz = -150;
-                    tRotY = t.baseX * 0.02;
-                    tRotX = -t.baseY * 0.02;
+                    /* Everything else pushes away from the viewport centre and
+                       recedes. Offsets are computed from the tile's slot, not from
+                       baseX/baseY — those are always 0, so the previous
+                       `baseX * 1.5` did nothing at all. */
+                    tx = t.awayX; ty = t.awayY; tz = -150;
+                    tRotY = t.awayX * 0.02;
+                    tRotX = -t.awayY * 0.02;
                     t.el.style.zIndex = 10;
                 } else if (isDraggingThis) {
                     tx += t.dragOffsetX; ty += t.dragOffsetY; tz += 50;
@@ -2205,7 +2306,6 @@ function initMobile() {
                 t.x += t.vx * ticks; t.y += t.vy * ticks; t.z += t.vz * ticks;
                 t.rotX += t.vRotX * ticks; t.rotY += t.vRotY * ticks; t.rotZ += t.vRotZ * ticks;
 
-                /* Soft vertical bounds so idle drift can't wander. */
                 if (isIdle) {
                     const minY = t.baseY - PHYS.maxVerticalTravel;
                     const maxY = t.baseY + PHYS.maxVerticalTravel;
@@ -2220,10 +2320,20 @@ function initMobile() {
                 }
 
                 write(t);
-                alive = true;   /* idle bob never fully rests, by design */
+                alive = true;
             }
 
-            if (!running) { ticking = false; lastFrame = 0; return false; }
+            /* Hand the restore spring back to the idle spring once everything has
+               genuinely settled, so the tighter tension doesn't stiffen the bob. */
+            if (restoring) {
+                let settled = true;
+                for (let i = 0; i < tiles.length; i++) {
+                    const t = tiles[i];
+                    if (Math.abs(t.z) > 2 || Math.hypot(t.vx, t.vy, t.vz) > 0.6) { settled = false; break; }
+                }
+                if (settled) restoring = false;
+            }
+
             return alive;
         }
 
@@ -2234,10 +2344,7 @@ function initMobile() {
             Ticker.add(tick);
         }
 
-        /* ---- dynamic grid ----
-           Partitions N tiles into balanced rows of up to 3 (8 tiles -> 3,3,2),
-           then fits that grid into the available viewport. Not hardcoded to any
-           specific count, so it holds up if the video list changes later. */
+        /* Balanced rows of up to maxPerRow. Two per row for 8 tiles. */
         function partitionRows(n, maxPerRow) {
             const numRows = Math.ceil(n / maxPerRow);
             const base = Math.floor(n / numRows);
@@ -2254,47 +2361,42 @@ function initMobile() {
             const availW = vw - 40;
             const availH = vh - headerOffset - 24;
 
-            const rows = partitionRows(tiles.length, 3);
+            /* TWO per row. Three per row was sized height-first and then shrunk to
+               satisfy the width constraint, which on a 390px phone landed at
+               ~114px-wide tiles inside 744px of available height — a small object
+               stranded in a big field, which is what read as "off-centre". */
+            const rows = partitionRows(tiles.length, 2);
             const gap = 12;
 
-            /* Height-first: fill the available vertical space (three rows worth
-               of landscape tiles), then shrink only if the widest row wouldn't
-               fit — this fills the viewport rather than leaving a small
-               composed block stranded in a lot of empty grey. */
             const maxCols = Math.max(...rows);
             const ASPECT = 0.68; // height / width
-            let tileH = (availH - gap * (rows.length - 1)) / rows.length;
-            let tileW = tileH / ASPECT;
 
-            const neededRowW = tileW * maxCols + gap * (maxCols - 1);
-            if (neededRowW > availW) {
-                const scale = availW / neededRowW;
+            /* Width-first now: two columns is the binding constraint on a phone,
+               so solve it directly and only shrink if the stack is too tall. */
+            let tileW = (availW - gap * (maxCols - 1)) / maxCols;
+            let tileH = tileW * ASPECT;
+
+            const neededColH = tileH * rows.length + gap * (rows.length - 1);
+            if (neededColH > availH) {
+                const scale = availH / neededColH;
                 tileW *= scale; tileH *= scale;
             }
             const contentH = tileH * rows.length + gap * (rows.length - 1);
 
-            /* Optical centring: true viewport centre reads as slightly LOW once
-               content actually fills a frame (a well-known effect in logo/icon
-               design — symmetric content centred by the numbers looks like it's
-               sinking). Landing the visual centre about 5% of viewport height
-               above true centre corrects for that and also cancels an existing
-               asymmetry here: headerOffset (76px) claims more of the top than
-               the 24px bottom margin claims of the bottom, which was previously
-               pulling the resting grid'S centre 26px BELOW true centre — the
-               opposite of what actually looks balanced. */
-            const viewCY = (vh / 2) - vh * 0.05;
+            /* TRUE vertical centre. The previous -5% "optical" lift was fighting
+               an existing asymmetry (76px claimed at the top vs 24px at the
+               bottom) in the opposite direction, and the two corrections together
+               were what made the composition read as floating high. */
+            const viewCY = vh / 2;
             const startY = Math.max(headerOffset + 12, viewCY - contentH / 2);
 
-            /* Where a focused tile flies to: centred in the viewport, and pushed
-               forward on Z by exactly the amount that makes it fill FOCUS_FILL of
-               the viewport width under the container's perspective.
-
-               Under CSS perspective P, an element at translateZ(z) appears scaled
-               by P / (P - z). Solving for the z that yields our desired scale is
-               what makes the tile land at a predictable on-screen size on any
-               device, rather than guessing a fixed z. */
+            /* Under CSS perspective P, an element at translateZ(z) appears scaled
+               by P / (P - z). Solving for the z that yields the desired on-screen
+               width makes the focused tile land predictably on any device.
+               FOCUS_FILL trimmed from 0.86 so a focused tile no longer blankets
+               its neighbours and swallow their taps. */
             const PERSPECTIVE = 1200;
-            const FOCUS_FILL = 0.86;
+            const FOCUS_FILL = 0.72;
             const desiredW = vw * FOCUS_FILL;
             const focusScale = desiredW / tileW;
             const focusZ = PERSPECTIVE * (1 - 1 / focusScale);
@@ -2314,28 +2416,42 @@ function initMobile() {
                     t.el.style.top = (cy - tileH / 2) + 'px';
                     t.el.style.width = tileW + 'px';
                     t.el.style.height = tileH + 'px';
-                    /* Physics operates in offsets from the slot, so the resting
-                       base is the origin. */
                     t.baseX = 0;
                     t.baseY = 0;
-                    t.baseRotZ = ((i => (i % 3) - 1)(t.i)) * 1.5;
+                    t.baseRotZ = ((t.i % 3) - 1) * 1.5;
+                    /* Exact viewport centre when focused. */
                     t.focusX = viewCX - cx;
                     t.focusY = viewCY - cy;
                     t.focusZ = focusZ;
+                    /* Outward drift when something else is focused. */
+                    let dx = cx - viewCX, dy = cy - viewCY;
+                    const mag = Math.hypot(dx, dy) || 1;
+                    t.awayX = (dx / mag) * 46;
+                    t.awayY = (dy / mag) * 34;
                     write(t);
                 }
             });
         }
 
-        /* ---- entrance: converge from different directions ----
-           Tiles are seeded far off their slot (each in a different direction,
-           pushed back on Z) and the physics integrator springs them home — same
-           approach as the Pulse engine's fly-in, so the arrival carries the same
-           weight as every other motion in the scene. */
-        function enter() {
-            const first = !entered;
-            if (first) entered = true;
+        /* ---- entrance ----
+           Fully self-sufficient: cancels any pending visibility timers and
+           hard-resets every tile's class/position BEFORE scheduling anything new,
+           so entry never depends on a previous leave() having finished cleanly.
+           (The scattered-tiles regression came from leave()'s per-tile
+           "remove visible" timers still being in flight when a quick return
+           called enter() again — those bare, uncancelled setTimeouts would fire
+           after re-entry and silently hide tiles that had just been re-added.
+           Storing and clearing the handles here removes that race outright.) */
+        function clearVisibleTimers() {
+            visibleTimers.forEach(id => clearTimeout(id));
+            visibleTimers.length = 0;
+        }
 
+        function enter() {
+            clearTimeout(promptTimer);
+            clearVisibleTimers();
+
+            restoring = false;
             running = true;
             layout();
 
@@ -2343,6 +2459,8 @@ function initMobile() {
             const vcy = window.innerHeight / 2;
 
             tiles.forEach((t, i) => {
+                t.el.classList.remove('visible');   // synchronous, unconditional
+
                 let dx = t.cx - vcx;
                 let dy = t.cy - vcy;
                 const mag = Math.hypot(dx, dy);
@@ -2357,17 +2475,13 @@ function initMobile() {
                 t.vx = 0; t.vy = 0; t.vz = 0;
                 t.vRotX = 0; t.vRotY = 0; t.vRotZ = 0;
                 write(t);
-                /* Staggered reveal so they don't all pop opacity at once. */
-                setTimeout(() => t.el.classList.add('visible'), i * 60);
+                visibleTimers.push(setTimeout(() => t.el.classList.add('visible'), i * 60));
             });
 
             kick();
 
-            /* Prompt appears only after the tiles have converged and settled —
-               re-shown on every visit to the page, per spec. */
             const settleMs = tiles.length * 60 + 1200;
-            clearTimeout(promptTimer);
-            promptTimer = setTimeout(() => { showPrompt(); refreshPlayback(); }, settleMs);
+            promptTimer = setTimeout(showPrompt, settleMs);
         }
 
         function showPrompt() {
@@ -2381,15 +2495,25 @@ function initMobile() {
             prompt.classList.remove('on');
         }
 
+        /* ---- leave ----
+           A plain page-level opacity cross-fade handles the whole visual
+           transition (see the .page CSS transition and goto()) — no per-tile
+           fly-out here. This just stops holding a video and parks the physics
+           loop; positions are irrelevant until the next enter() hard-resets
+           them anyway. */
         function leave() {
-            running = false;
             clearTimeout(promptTimer);
-            tiles.forEach(t => { detach(t); t.el.classList.remove('visible'); });
-            activeIdx = -1;
-            clearFocus();
+            clearVisibleTimers();
             prompt.classList.remove('on');
             promptShown = false;
             promptDismissed = false;
+
+            if (focusIdx !== -1) { stopTile(tiles[focusIdx]); focusIdx = -1; }
+            tiles.forEach(t => t.el.classList.remove('focused'));
+
+            restoring = false;
+            running = false;
+            tiles.forEach(t => { stopTile(t); detach(t); });
         }
 
         function attach(t, warm) {
@@ -2408,53 +2532,73 @@ function initMobile() {
             t.el.classList.remove('playing', 'live');
         }
 
+        function stopTile(t) {
+            t.video.pause();
+            t.loops = 0;
+            try { t.video.currentTime = 0; } catch (e) {}
+            t.el.classList.remove('playing', 'live');
+        }
+
+        /* Only the focused tile ever holds a decoder; its neighbour is warmed but
+           never played. Everything else stays fully detached, which is strictly
+           cheaper than the previous always-play-tile-0 arrangement. */
         function refreshPlayback() {
-            const want = focusIdx >= 0 ? focusIdx : 0;
-            const warm = Math.min(want + 1, tiles.length - 1);
-            activeIdx = want;
+            const want = focusIdx;
+            const warm = want >= 0 ? Math.min(want + 1, tiles.length - 1) : -1;
             tiles.forEach((t, i) => {
-                if (i === want) { attach(t, false); if (!userPaused.has(i)) { const p = t.video.play(); if (p && p.catch) p.catch(() => {}); } }
+                if (i === want) attach(t, false);
                 else if (i === warm) attach(t, true);
-                else detach(t);
+                else { if (t.attached) stopTile(t); detach(t); }
             });
         }
 
-        /* Focus/unfocus only set state — the integrator resolves the motion, so
-           a tile propels forward to fill the viewport and everything else
-           recedes, all under the same spring. Background tiles also dim
-           slightly — a cheap opacity cue that reinforces the Z-recede they're
-           already doing, so "coming forward" reads through brightness too, not
-           just depth. */
         function setFocus(idx) {
+            if (focusIdx !== -1 && focusIdx !== idx) stopTile(tiles[focusIdx]);
             focusIdx = idx;
+            restoring = false;
             tiles.forEach((t, i) => {
                 t.el.classList.toggle('focused', i === idx);
-                t.el.classList.toggle('dimmed', i !== idx);
             });
             kick();
         }
+
         function clearFocus() {
+            if (focusIdx !== -1) stopTile(tiles[focusIdx]);
             focusIdx = -1;
-            tiles.forEach(t => t.el.classList.remove('focused', 'dimmed'));
+            restoring = true;
+            tiles.forEach(t => t.el.classList.remove('focused'));
             kick();
         }
 
-        function onTap(t) {
+        function onTap(t, e) {
             dismissPrompt();
-            if (focusIdx === t.i) {
-                if (t.video.paused) { userPaused.delete(t.i); const p = t.video.play(); if (p && p.catch) p.catch(() => {}); }
-                else { userPaused.add(t.i); t.video.pause(); }
+
+            if (focusIdx !== t.i) {
+                setFocus(t.i);
+                refreshPlayback();
                 return;
             }
-            userPaused.delete(t.i);
-            setFocus(t.i);
-            refreshPlayback();
+
+            /* Already focused. Playing -> pause and bring the play mark back. */
+            if (!t.video.paused) { t.video.pause(); return; }
+
+            /* Focused and paused: near the centre starts playback, anywhere else
+               dismisses. Splitting these is what stops an off-target tap from
+               silently pausing a video the user was aiming past. */
+            const r = t.el.getBoundingClientRect();
+            const dx = e.clientX - (r.left + r.width / 2);
+            const dy = e.clientY - (r.top + r.height / 2);
+            if (Math.hypot(dx, dy) < r.width * 0.26) {
+                t.loops = 0;
+                attach(t, false);
+                const p = t.video.play();
+                if (p && p.catch) p.catch(() => {});
+            } else {
+                clearFocus();
+                refreshPlayback();
+            }
         }
 
-        /* No long-press arm: the gallery no longer scrolls, so there is no
-           competing gesture to disambiguate against. A drag begins the instant
-           real movement is detected — closer to how the original mouse-driven
-           desktop engine behaved. */
         const MOVE_THRESHOLD = 6;
         const TAP_MS = 320;
 
@@ -2466,9 +2610,6 @@ function initMobile() {
                 if (wasDrag) {
                     t.dragging = false;
                     t.el.classList.remove('armed');
-                    /* Drop the offset and let the spring carry it home — the
-                       integrator already holds the tile's live velocity, so the
-                       return keeps whatever momentum the drag built up. */
                     t.dragOffsetX = 0;
                     t.dragOffsetY = 0;
                     kick();
@@ -2503,7 +2644,7 @@ function initMobile() {
                 const dist = Math.hypot(e.clientX - sx, e.clientY - sy);
                 const wasDrag = moved;
                 release(wasDrag);
-                if (!wasDrag && dist < MOVE_THRESHOLD && dt < TAP_MS) onTap(t);
+                if (!wasDrag && dist < MOVE_THRESHOLD && dt < TAP_MS) onTap(t, e);
             }, { passive: true });
 
             t.el.addEventListener('pointercancel', () => release(moved), { passive: true });
@@ -2518,11 +2659,10 @@ function initMobile() {
         }, { passive: true });
 
         document.addEventListener('visibilitychange', () => {
-            if (document.hidden) tiles.forEach(t => t.video.pause());
-            else if (currentPage === 'gallery') refreshPlayback();
+            if (document.hidden && focusIdx >= 0) tiles[focusIdx].video.pause();
         });
 
-        return { enter, leave, layout() { if (entered) layout(); } };
+        return { enter, leave, layout };
     })();
 
     /* ==========================================================================
@@ -2545,9 +2685,6 @@ function initMobile() {
 
     /* ==========================================================================
        BOOT
-       --------------------------------------------------------------------------
-       No Welcome text, no Swipe-to-Navigate — the carousel and controls simply
-       arrive, in sequence, and the peeking-edge carousel is its own affordance.
        ========================================================================== */
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
@@ -5986,9 +6123,6 @@ async function initDesktop() {
         };
     })();
 
-    /* ==========================================================================
-       9. ROUTING
-       ========================================================================== */
     /* ==========================================================================
        9. ROUTING
        --------------------------------------------------------------------------
