@@ -552,6 +552,9 @@
             opacity: 0; transition: opacity 1s ease; pointer-events: none;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
+        /* Warm graphite instead of white — everything else (font, weight,
+           size, pulse animation) is untouched. */
+        #scroll-text, #swipe-text { color: #777777; }
         @keyframes pulseText {
             0% { transform: scale(1); opacity: 0.7; }
             50% { transform: scale(1.05); opacity: 1; }
@@ -4688,7 +4691,7 @@ async function initDesktop() {
             const proxy2 = { v: openProgress };
             tl.to(proxy2, {
                 v: 0,
-                duration: REDUCED_MOTION ? 0 : (V.compact ? 1.1808 : 1.496),
+                duration: REDUCED_MOTION ? 0 : (V.compact ? 0.8 : 1.0),
                 ease: 'power2.out',
                 onUpdate: () => { openProgress = proxy2.v; }
             }, 0);
@@ -6697,7 +6700,7 @@ async function initDesktop() {
            so it's calibrated against a different quantity), and partly because
            it's no longer compensating for a filter eating most of the input.
            Nothing about mouse/touch dragging changes. */
-        const ROTATE_GAIN = 21.0;          // rad/s of velocity injected per unit RAW per-detection delta
+        const ROTATE_GAIN = 23.7;          // rad/s of velocity injected per unit RAW per-detection delta
         const ROTATE_FRICTION_DRIVE = 0.985;  // near-frictionless while pinching — the user is in control
         const ROTATE_FRICTION_GLIDE = 0.90;   // post-release decay — this is what makes the glide short and restrained
         const SMOOTH = 0.16;               // 60fps lerp, retained for visual smoothing only (not rotation)
@@ -6706,14 +6709,14 @@ async function initDesktop() {
            gated by pinch — "rotate" is the only job pinch does), riding the
            SAME holdFactor smoothing Scene3 already uses for click-and-hold.
 
-           Now driven to FULL native depth (1.0) rather than the earlier
-           40-60% band — the damped version read as a tamer, separate system
-           rather than the sphere's own behaviour. This is exactly what a
-           click-and-hold sends, so the projection range in Pulse is now
-           identical to the native interaction. The float-capable
-           setPointerDown signature is retained since it costs nothing and
-           keeps the option open. */
-        const FOCUS_DEPTH = 1.0;
+           Drifts within 84-93% rather than sitting at a fixed value or the
+           earlier full-native 100% — the user only controls rotation, not
+           depth, so a touch short of full click-and-hold projection reads as
+           slightly more measured, while the slow sine keeps it feeling alive
+           rather than mechanically pinned. */
+        const FOCUS_BASE = 0.885;
+        const FOCUS_DRIFT = 0.045;
+        const FOCUS_DRIFT_HZ = 0.35;
 
         let rawX = 0.5, rawY = 0.5, rawTargetX = 0.5, rawTargetY = 0.5;
         /* Previous RAW detection sample — the basis for both rotation and
@@ -6727,6 +6730,7 @@ async function initDesktop() {
         let pinchHoldStart = 0;
         let lastDetectTime = 0;
         let rafId = 0;
+        let simTime = 0;
 
         const PINCH_CONFIRM_MS = 250;      // brief debounce before FRAME confirms and advances
 
@@ -6767,12 +6771,12 @@ async function initDesktop() {
         /* Whatever's centred deepens toward the viewer continuously while
            Pulse is live — the illusion is that the user's movement is causing
            this, when the depth is really just a function of Pulse being on.
-           Sends full native depth, so the projection matches click-and-hold
-           exactly; the organic liveliness comes from the tiles' own idle sway
-           and the holdFactor smoothing, which are untouched. */
+           Drifts within the 84-93% band (see FOCUS_BASE/FOCUS_DRIFT above)
+           rather than sitting at one fixed depth. */
         function applyCenterFocus() {
             Scene3.setPointer(window.innerWidth / 2, window.innerHeight / 2);
-            Scene3.setPointerDown(FOCUS_DEPTH);
+            const drift = Math.sin(simTime * Math.PI * 2 * FOCUS_DRIFT_HZ) * FOCUS_DRIFT;
+            Scene3.setPointerDown(clamp(FOCUS_BASE + drift, 0, 1));
         }
 
         /* Called once per DETECTION (not per frame) with the raw, unsmoothed
@@ -6818,6 +6822,7 @@ async function initDesktop() {
             const now = performance.now();
             const dt = Math.min(lastFrameTime ? (now - lastFrameTime) / 1000 : 1 / 60, 0.05);
             lastFrameTime = now;
+            simTime += dt;
 
             if (handLandmarker && camVideo.readyState >= 2 && now - lastDetectTime >= 66) {
                 lastDetectTime = now;
