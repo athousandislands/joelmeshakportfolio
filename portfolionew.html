@@ -4,6 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title>Joel Meshak</title>
+    <meta name="description" content="Joel Meshak's portfolio.">
+
+    <!-- Link preview (Open Graph / Twitter Card). Without these tags a
+         scraper has nothing to build a preview from — it falls back to a
+         broken-image glyph for the image, and to the first visible paragraph
+         of text on the page for a description, which is why the Pulse camera
+         notice was showing up (it's hidden via opacity, not removed from the
+         DOM, so a non-rendering scraper still sees it as ordinary text).
+         Points directly at hair.png rather than a separately-cropped 1200x630
+         export, since only the source file exists — most platforms will
+         auto-crop a non-1.91:1 image sensibly, but a manually prepared crop
+         would give more control over the composition if wanted later. -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Joel Meshak">
+    <meta property="og:description" content="Joel Meshak's portfolio.">
+    <meta property="og:image" content="https://joelmeshak.com/assets/projects/digital-art/gallery/hair.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Joel Meshak">
+    <meta name="twitter:description" content="Joel Meshak's portfolio.">
+    <meta name="twitter:image" content="https://joelmeshak.com/assets/projects/digital-art/gallery/hair.png">
 
     <script>
     (function () {
@@ -390,6 +410,18 @@
         }
         #pulse-denied.visible { transform: translateY(0); }
 
+        /* Shown when mouse/touch interaction is attempted while Pulse has it
+           suppressed — same glass treatment as the notice/onboarding panels
+           (white text on real glass), fading in with a slight scale-up. */
+        #pulse-input-blocked {
+            left: 50%; top: 50%;
+            width: min(360px, 84vw);
+            padding: 22px 26px;
+            transform: translate(-50%, -50%) translateY(6px) scale(0.97);
+        }
+        #pulse-input-blocked.visible { transform: translate(-50%, -50%) translateY(0) scale(1); }
+        #pulse-input-blocked p { margin: 0; color: #ffffff; font-size: 0.95rem; line-height: 1.5; text-align: center; }
+
         #home-btn { opacity: 0; pointer-events: none; }
 
         #contact-btn {
@@ -455,7 +487,7 @@
             gap: 12px;
             padding: 10px 14px;
             border-radius: 14px;
-            color: #ffffff;
+            color: #777777;
             font-size: 15px;
             font-weight: 400;
             cursor: pointer;
@@ -611,7 +643,7 @@
         #click-blocker.active { display: block; }
 
         #collection-info {
-            position: absolute; color: #FFFFFF; opacity: 0; pointer-events: none;
+            position: absolute; color: #777777; opacity: 0; pointer-events: none;
             transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1);
             z-index: 200;
             top: calc(var(--vh) * 12);
@@ -665,7 +697,7 @@
 
         .cluster-title {
             position: absolute; top: 0; left: 0; transform-origin: center center;
-            color: #FFFFFF; font-size: 0.98rem; text-align: center;
+            color: #777777; font-size: 0.98rem; text-align: center;
             white-space: nowrap; letter-spacing: 0.01em;
         }
 
@@ -1276,147 +1308,220 @@
         }
 
         /* ==========================================================================
-           5. GALLERY
+           5. GALLERY — Echo-style vertical 3D carousel
            --------------------------------------------------------------------------
-           Four rows of two. The previous three-per-row grid was sized height-first
-           and then uniformly shrunk to satisfy the width constraint, which on a
-           390px phone produced ~114px-wide tiles inside 744px of available height —
-           a small object stranded in a large field, which is what read as
-           "off-centre and too high". Two per row fills the frame properly and lets
-           the composition sit on the true vertical centre.
+           Full replacement of the tile-grid gallery. #gallery-scroll is a real,
+           native-scrolling element — its spacer child exists purely to generate
+           scroll range, so the browser's own touch/momentum physics drives the
+           gesture (the same trick desktop's Scene 2 collections carousel already
+           uses via #native-scroll-container). #gallery-viewport sits on top,
+           JS-transformed per card from that scroll position — decoupled from the
+           DOM scroll position of the cards themselves, exactly like Echo's
+           perspective-container-over-window-scroll approach, just scoped to this
+           page's own scroll container instead of the document.
+
+           Fake glass throughout (solid tinted fill + border + inset highlight),
+           not real backdrop-filter blur — Echo's own reference uses blur(), but
+           that contradicts this project's mobile-performance rule everywhere
+           else, so the casing/play-button glass here is adapted to the same
+           technique already used for every other mobile glass surface.
            ========================================================================== */
         #mobile-root #gallery {
             overflow: hidden;
-            touch-action: none;
         }
 
-        #mobile-root #gallery-prompt {
-            position: absolute;
-            left: 0; right: 0;
-            top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 18px);
-            text-align: center;
-            font-size: 1rem;
-            font-weight: 400;
-            color: var(--ink);
-            letter-spacing: 0.1px;
-            padding: 0 24px;
-            opacity: 0;
-            transform: scale(0.96);
-            transition: opacity 0.5s ease, transform 0.5s var(--ease-out);
-            pointer-events: none;
-            z-index: 50;
+        #mobile-root #gallery-scroll {
+            position: absolute; inset: 0;
+            overflow-y: auto; overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            z-index: 1;
         }
-        #mobile-root #gallery-prompt.on {
+        #mobile-root #gallery-scroll::-webkit-scrollbar { display: none; }
+        #mobile-root #gallery-scroll-spacer { width: 1px; } /* height set in JS */
+
+        #mobile-root #gallery-viewport {
+            position: sticky;
+            top: 0;
+            height: 100%;
+            perspective: 850px;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        #mobile-root .gallery-card {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: min(78vw, 420px);
+            display: none;
+            opacity: 0;
+            transform-style: preserve-3d;
+            will-change: transform, opacity;
+            pointer-events: auto;
+        }
+        /* Separate inner element for the one-time entrance scale/fade, so it
+           never fights the outer element's own per-frame JS transform (position/
+           rotation/opacity from the scroll math) — the two layers are
+           independent and simply compose visually. */
+        #mobile-root .gallery-card-inner {
             opacity: 1;
             transform: scale(1);
-            animation: promptPulse 3.6s ease-in-out 0.6s infinite;
         }
-        @keyframes promptPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        #mobile-root .gallery-card-inner.gallery-entrance-start {
+            opacity: 0;
+            transform: scale(0.92);
+            transition: none;
+        }
+        #mobile-root .gallery-card-inner.gallery-entrance-go {
+            opacity: 1;
+            transform: scale(1);
+            transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+        }
 
-        #mobile-root #stack {
+        #mobile-root .gallery-casing {
             position: relative;
             width: 100%;
-            height: 100%;
-            perspective: 1200px;
-            transform-style: preserve-3d;
-        }
-
-        #mobile-root .tile {
-            position: absolute;
-            top: 0; left: 0;
-            opacity: 0;
-            transform-style: preserve-3d;
-            transition: opacity 0.5s ease;
-        }
-        #mobile-root .tile.visible { opacity: 1; }
-
-        #mobile-root .tile-float { width: 100%; height: 100%; }
-
-        /* The only element JS transforms. Background is a flat neutral rather than
-           black, so a tile whose poster hasn't resolved yet reads as an empty
-           frame rather than a hole. */
-        #mobile-root .tile-body {
-            position: relative;
-            width: 100%; height: 100%;
-            border-radius: 12px;
+            aspect-ratio: 16 / 9;
+            border-radius: 20px;
             overflow: hidden;
-            background: #bdbdbd;
-            box-shadow:
-                0 10px 26px rgba(0, 0, 0, 0.20),
-                0 2px 5px rgba(0, 0, 0, 0.09);
-            transform-origin: center center;
-            transform-style: preserve-3d;
-            backface-visibility: hidden;
-            will-change: transform;
-            transition: box-shadow 0.4s ease, opacity 0.35s ease;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
         }
-
-        /* THE BEZEL.
-           This used to be an `inset` box-shadow on .tile-body. Inset shadows paint
-           on the element's own background layer, BELOW in-flow children — and the
-           video/poster fills the box at 100%/100%, so the ring was completely
-           covered. It only became visible mid-transform, when the 3D compositor
-           rasterised parent and child into separate layers and edge antialiasing
-           let a hairline bleed through. Hence "only appears while moving".
-
-           Moved to an ::after overlay above the media (z-index 3), so it is
-           genuinely present in every state. 1px instead of 1.5px and lower alpha:
-           smaller and more understated, as asked. */
-        #mobile-root .tile-body::after {
+        /* Static subtle edge highlight — the mobile translation of Echo's
+           cursor-tracking glow. There's no "hover" concept on a touchscreen (a
+           finger is either touching or it isn't, and it's usually busy driving
+           the scroll gesture itself), so this is a fixed highlight rather than
+           trying to fake a moving spotlight off touch events. */
+        #mobile-root .gallery-casing::after {
             content: '';
-            position: absolute;
-            inset: 0;
-            z-index: 3;
+            position: absolute; inset: 0;
             border-radius: inherit;
             pointer-events: none;
-            box-shadow:
-                inset 0 0 0 1px rgba(255, 255, 255, 0.20),
-                inset 0 1px 0 rgba(255, 255, 255, 0.26);
-            transition: box-shadow 0.35s ease;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
         }
-        #mobile-root .tile.focused .tile-body::after {
-            box-shadow:
-                inset 0 0 0 1px rgba(255, 255, 255, 0.34),
-                inset 0 1px 0 rgba(255, 255, 255, 0.34);
-        }
-
-        #mobile-root .tile-body video,
-        #mobile-root .tile-body img.poster {
+        #mobile-root .gallery-casing video {
             width: 100%; height: 100%;
-            object-fit: cover; display: block;
-            pointer-events: none;
+            object-fit: contain;
+            background: #050505;
+            display: block;
         }
-        #mobile-root .tile-body img.poster {
-            position: absolute; inset: 0; z-index: 1;
-            transition: opacity 0.32s ease;
-        }
-        #mobile-root .tile.live .tile-body img.poster { opacity: 0; }
-
-        /* Fake-glass play mark. Present on EVERY resting tile — it's the signal
-           that these are videos and that one has to be chosen to watch it. */
-        #mobile-root .tile-play {
-            position: absolute;
-            z-index: 4;
-            left: 50%; top: 50%;
-            width: 38px; height: 38px;
-            margin: -19px 0 0 -19px;
-            border-radius: 50%;
-            pointer-events: none;
+        #mobile-root .gallery-cover {
+            position: absolute; inset: 0;
+            background: rgba(0, 0, 0, 0.6);
             display: flex; align-items: center; justify-content: center;
-            background: rgba(255, 255, 255, 0.34);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            box-shadow:
-                inset 0 1px 0 rgba(255, 255, 255, 0.55),
-                0 2px 8px rgba(0, 0, 0, 0.14);
-            transition: opacity 0.3s ease, transform 0.35s var(--ease-out);
+            z-index: 3;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
         }
-        #mobile-root .tile-play svg {
-            width: 13px; height: 15px;
-            margin-left: 2px;
-            fill: #ffffff;
+        #mobile-root .gallery-card-title {
+            color: #ffffff;
+            font-weight: 400;
+            letter-spacing: 0.02em;
+            font-size: clamp(1.05rem, 4.5vw, 1.5rem);
+            margin: 0;
+            text-align: center;
+            padding: 0 16px;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
         }
-        #mobile-root .tile.focused .tile-play { transform: scale(1.12); }
-        #mobile-root .tile.playing .tile-play { opacity: 0; transform: scale(0.86); }
+
+        /* ---- control cluster: scrubber above the play button, both reading
+           as one system rather than two separate elements ---- */
+        #mobile-root .gallery-controls {
+            display: flex; flex-direction: column; align-items: center;
+            margin-top: 20px;
+            gap: 16px;
+        }
+
+        #mobile-root .gallery-scrub {
+            -webkit-appearance: none; appearance: none;
+            width: 100%;
+            max-width: 340px;
+            height: 24px;              /* generous tap target; visual track is thinner, see below */
+            background: transparent;
+            margin: 0;
+            cursor: pointer;
+            --p: 0%;
+        }
+        #mobile-root .gallery-scrub::-webkit-slider-runnable-track {
+            height: 3px;
+            border-radius: 2px;
+            background: linear-gradient(to right, #ffffff var(--p), rgba(255, 255, 255, 0.26) var(--p));
+        }
+        #mobile-root .gallery-scrub::-moz-range-track {
+            height: 3px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.26);
+        }
+        #mobile-root .gallery-scrub::-moz-range-progress {
+            height: 3px;
+            border-radius: 2px;
+            background: #ffffff;
+        }
+        #mobile-root .gallery-scrub::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 13px; height: 13px;
+            border-radius: 50%;
+            background: #ffffff;
+            margin-top: -5px;          /* centres the thumb on the 3px track */
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+        }
+        #mobile-root .gallery-scrub::-moz-range-thumb {
+            width: 13px; height: 13px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: none;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+        }
+
+        /* No button chrome — just the icons themselves. Kept as a sizing box
+           for a consistent tap target and to hold the is-play/is-pause state. */
+        #mobile-root .gallery-play-btn {
+            position: relative;
+            width: 50px; height: 50px;
+            transition: transform 0.15s ease;
+        }
+        #mobile-root .gallery-play-btn:active { transform: scale(0.92); }
+        #mobile-root .gallery-icon-play,
+        #mobile-root .gallery-icon-pause {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            transition: opacity 0.15s ease;
+        }
+        #mobile-root .gallery-icon-play svg {
+            width: 26px; height: auto;
+            display: block;
+            /* optical centering — the triangle's visual weight sits left of
+               its own bounding box */
+            margin-left: 3px;
+        }
+        #mobile-root .gallery-icon-pause svg { width: 20px; height: auto; display: block; }
+        #mobile-root .gallery-icon-play svg path,
+        #mobile-root .gallery-icon-pause svg path { fill: #ffffff; }
+        #mobile-root .gallery-play-btn.is-play .gallery-icon-pause { opacity: 0; }
+        #mobile-root .gallery-play-btn.is-pause .gallery-icon-play { opacity: 0; }
+
+        #mobile-root .gallery-prompt-text {
+            position: absolute;
+            left: 0; right: 0;
+            text-align: center;
+            color: #ffffff;
+            font-weight: 400;
+            font-size: 1.125rem;
+            z-index: 5;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.6s ease;
+        }
+        #mobile-root #gallery-welcome {
+            top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 22px);
+        }
+        #mobile-root #gallery-welcome::after {
+            content: '|';
+            margin-left: 4px;
+            animation: blink 1s step-start infinite;
+        }
+        #mobile-root #gallery-welcome.done::after { opacity: 0; transition: opacity 0.4s ease; }
+
 
         /* ==========================================================================
            6. LANDSCAPE
@@ -1432,10 +1537,11 @@
            anchored to the top of its row) so the pair reads as one centred block
            without needing an extra wrapper element.
 
-           GALLERY: the 4x2 tile count and the landscape focus-fit math live in JS
-           (Gallery.layout() already takes maxPerRow as a parameter) — nothing
-           landscape-specific is needed here beyond what the tiles/frame already do,
-           since that grid is JS-positioned via transform, not CSS layout.
+           GALLERY: the vertical carousel's motion math reads window.innerWidth/
+           innerHeight directly every frame, so it adapts to landscape's wide-
+           short viewport automatically — no landscape-specific branch needed
+           here or in JS. Per direction, the same arc constants run regardless
+           of orientation rather than being retuned per shape.
            ========================================================================== */
         #mobile-root[data-orient="landscape"] #home {
             display: grid;
@@ -1474,19 +1580,11 @@
         }
         #mobile-root[data-orient="landscape"] #position-dots { justify-content: flex-start; }
         #mobile-root[data-orient="landscape"] #description { margin: 0; }
-        /* Gallery's 4x2 grid starts much closer to the top in a short
-           landscape viewport than the 2-column portrait grid does, so the
-           prompt's portrait offset (+18px below the header) sits low enough
-           to be covered by the tiles. Pull it up snug under the header. */
-        #mobile-root[data-orient="landscape"] #gallery-prompt {
-            top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 4px);
-        }
 
         /* ==========================================================================
            7. REDUCED MOTION
            ========================================================================== */
         @media (prefers-reduced-motion: reduce) {
-            #mobile-root #gallery-prompt.on { animation: none; }
             #mobile-root #home.arrive #tabslot,
             #mobile-root #home.arrive #project-name,
             #mobile-root #home.arrive #carousel,
@@ -1636,6 +1734,10 @@
         </div>
 
         <div id="pulse-denied" class="pulse-panel"></div>
+
+        <div id="pulse-input-blocked" class="pulse-panel">
+            <p>Touch interaction is disabled in Pulse mode. Turn off Pulse to re-enable.</p>
+        </div>
     </div>
 
     <!-- Context-loss fallback (FIX 14b) -->
@@ -1706,8 +1808,12 @@
     </section>
 
     <section id="gallery" class="page" role="tabpanel" aria-label="Gallery">
-        <div id="gallery-prompt">Touch to Interact</div>
-        <div id="stack"></div>
+        <div id="gallery-welcome" class="gallery-prompt-text"></div>
+
+        <div id="gallery-scroll">
+            <div id="gallery-viewport"></div>
+            <div id="gallery-scroll-spacer"></div>
+        </div>
     </section>
 
 </div>
@@ -1740,8 +1846,6 @@ function initMobile() {
     const DPR = Math.min(window.devicePixelRatio || 1, 2);
     const DERIVED_DIR = 'assets/_derived/';
     const DERIVED_WIDTHS = [480, 720, 1080];
-    const POSTER_DIR = 'assets/_posters/';
-    const MOBILE_VIDEO_DIR = 'assets/_mobile/';
     const stripExt = (p) => p.replace(/\.[^./]+$/, '');
 
     function derivedURL(src, cssWidth) {
@@ -1836,8 +1940,8 @@ function initMobile() {
     });
     const PROJECT_START = PROJECTS.map((_, pi) => CARDS.findIndex(c => c.project === pi));
 
-    /* "Queen of Everything" excluded on mobile only — its proportions don't sit
-       well in a fitted grid; desktop keeps it. */
+    /* Home carousel's project video entries — separate from the Gallery
+       page's own GALLERY_VIDEOS list below. */
     const VIDEOS = [
         { src: 'assets/projects/a-thousand-islands/videos/adaptive-motion.mp4', title: 'Adaptive Motion' },
         { src: 'assets/projects/a-thousand-islands/videos/particle-engine.mp4', title: 'Particle Engine' },
@@ -1855,8 +1959,6 @@ function initMobile() {
         'graphic-design': `<svg viewBox="0 0 76 84" aria-hidden="true"><path d="M39.71,10.97l-.03-.03c-.08-.13-.18-.25-.29-.36-.02-.02-.04-.03-.06-.05-.1-.09-.2-.16-.31-.23-.04-.02-.08-.05-.12-.07-.1-.05-.21-.09-.32-.13-.04-.01-.08-.03-.13-.04-.15-.04-.31-.06-.47-.06s-.32.02-.47.06c-.04.01-.08.03-.13.04-.11.03-.22.08-.32.13-.04.02-.08.04-.12.07-.11.07-.22.15-.31.23-.02.02-.04.03-.06.05-.11.11-.2.23-.29.36l-.03.03L12.26,50.97c-.47.79-.35,1.79.3,2.44l2.93,2.93c4.21,4.19,6.51,9.75,6.51,15.66v10c0,1.1.9,2,2,2s2-.9,2-2v-8h24v8c0,1.1.9,2,2,2s2-.9,2-2v-10c0-5.91,2.3-11.47,6.49-15.66l2.93-2.93c.65-.65.77-1.66.3-2.44L39.71,10.97ZM38,48c2.21,0,4,1.79,4,4s-1.79,4-4,4-4-1.79-4-4,1.79-4,4-4ZM57.66,53.51c-4.46,4.46-7.11,10.26-7.58,16.49h-24.16c-.47-6.23-3.12-12.02-7.58-16.49l-1.82-1.82,19.48-32.47v25.04c-3.44.89-6,4.02-6,7.74,0,4.41,3.59,8,8,8s8-3.59,8-8c0-3.72-2.56-6.85-6-7.74v-25.04l19.48,32.47-1.82,1.82ZM76,2c0,1.1-.9,2-2,2h-19.54c11.59,5.99,19.54,18.08,19.54,32,0,1.1-.9,2-2,2s-2-.9-2-2c0-17.64-14.36-32-32-32S6,18.36,6,36c0,1.1-.9,2-2,2s-2-.9-2-2C2,22.08,9.95,9.99,21.54,4H2c-1.1,0-2-.9-2-2S.9,0,2,0h72c1.1,0,2,.9,2,2Z"/></svg>`,
         'a-thousand-islands': `<svg viewBox="0 0 764.5 703.5" aria-hidden="true"><path fill-rule="evenodd" d="M323.8,239.7c33.9-2.5,76.4-1.2,110.4.8,26.8,1.6,36.1,2.4,59.5,16.4,19.8,11.9,80.1,51.4,92.7,67.3s9.7,16.6,11.5,25.8c3.9,20,5.3,72-2.5,90.3-11.2,26.3-47.9,26-72.2,24.1-53.5-4.2-101.8-74.1-146.8-69.9-30.1,2.8-73.8,47.8-104.8,61.3-27.1,11.8-88.2,18-102.5-15.1-8-18.7-7.1-82.5,0-101.8s50.2-47.9,69.2-60.8c29-19.8,48.7-35.7,85.6-38.4ZM374.3,258.9c-34.3,4.7-75.8,56.4-116.7,67.4-28.5,7.7-64.9-4.8-78.6,29.8s-9.6,69.5,19.2,72.2,67.2-37.5,94.9-48.4c21-8.2,55.1-4.2,78.5-4.5s76.2-7.1,106.5,7.7c25.8,12.7,98.4,80.6,110.3,20.2,4-20.5,1.7-50.3-15.9-64-16.6-13-39.2-7.5-58.6-11.2-33.8-6.5-60.7-32.9-88.4-51.2-16.7-11-29.7-20.9-51.2-18Z"/></svg>`
     };
-
-    const PLAY_GLYPH = '<svg viewBox="0 0 12 14" aria-hidden="true"><path d="M1 1v12l10-6z"/></svg>';
 
     /* ==========================================================================
        TICKER — one rAF for the whole app; stops itself when nothing subscribes.
@@ -1889,9 +1991,10 @@ function initMobile() {
     const switchBtns = [...switcher.querySelectorAll('.switch-btn')];
     const backBtn = document.getElementById('back-btn');
 
-    /* Landscape is its own composition (see the LANDSCAPE CSS section and
-       Gallery.layout()'s maxPerRow), not a stretched portrait layout. Read
-       synchronously at boot so the very first layout pass already has it. */
+    /* Landscape is its own composition for Home (see the LANDSCAPE CSS
+       section); the gallery carousel's motion math reads the viewport
+       directly every frame and adapts on its own. Read synchronously at boot
+       so the very first layout pass already has it. */
     function currentOrient() { return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'; }
     root.dataset.orient = currentOrient();
 
@@ -2045,6 +2148,17 @@ function initMobile() {
 
         function morph() {
             layout();
+            /* Seed the indicator's correct position and width BEFORE the bar
+               fades in. Previously nothing set `active` until
+               Carousel.reveal() called setActive ~1.3s later — layout()'s own
+               positioning is gated on active >= 0, so for that whole window
+               the indicator sat at its raw default CSS position (missing the
+               bar's own internal padding) while the bar and icons were
+               already fully visible, then visibly snapped once reveal() ran.
+               The carousel always opens on project 0 (Naivaa) — that's known
+               up front, not something that needs to wait for reveal()'s own
+               (unrelated) pacing to confirm. */
+            setActive(0, true);
             bar.classList.add('in');
             setTimeout(() => {
                 btns.forEach((b, i) => { b.style.animationDelay = (i * 0.15) + 's'; });
@@ -2324,665 +2438,344 @@ function initMobile() {
     })();
 
     /* ==========================================================================
-       POSTER QUEUE
+       GALLERY — Echo-style vertical 3D carousel
        --------------------------------------------------------------------------
-       No build step required. Each job spins up a throwaway <video>, seeks to
-       the MIDDLE of the clip rather than frame 0 — several of these clips open
-       on black or on a near-empty frame, which is why a first-frame capture
-       produced dark tiles — and paints it to a canvas.
+       Full replacement of the old tile-grid engine (PosterQueue, spring
+       physics, focus/away targeting — all removed). Ported from the "Echo"
+       carousel on the user's other site, adapted to this app's fixed-layout
+       shell:
 
-       Runs with bounded concurrency (MAX_WORKERS) rather than strictly one at a
-       time: this queue is started at BOOT, not gated behind opening the gallery,
-       so it needs to clear all 8 jobs well before a user who taps straight to
-       Gallery gets there. A handful of throwaway decoders overlapping for a
-       second or two at page load is a bounded, one-time cost, not a standing
-       one — each is torn down the moment its frame is captured.
-
-       If real posters are ever generated into assets/_posters/ this becomes a
-       no-op for any tile whose poster file loads first.
-       ========================================================================== */
-    const PosterQueue = (() => {
-        const jobs = [];
-        let activeWorkers = 0;
-        const MAX_WORKERS = 3;
-
-        function pump() {
-            while (activeWorkers < MAX_WORKERS && jobs.length) {
-                activeWorkers++;
-                runOne(jobs.shift());
-            }
-        }
-
-        function runOne({ src, img }) {
-            const v = document.createElement('video');
-            v.muted = true; v.playsInline = true; v.preload = 'auto';
-            v.setAttribute('playsinline', ''); v.setAttribute('muted', '');
-            let done = false;
-
-            const finish = () => {
-                if (done) return;
-                done = true;
-                try { v.removeAttribute('src'); v.load(); } catch (e) {}
-                activeWorkers--;
-                pump();
-            };
-
-            const grab = () => {
-                if (done) return;
-                const w = v.videoWidth, h = v.videoHeight;
-                if (!w || !h) { finish(); return; }
-                try {
-                    const c = document.createElement('canvas');
-                    const sc = Math.min(1, 640 / w);
-                    c.width = Math.round(w * sc);
-                    c.height = Math.round(h * sc);
-                    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-                    img.src = c.toDataURL('image/jpeg', 0.82);
-                    img.style.opacity = '';
-                } catch (e) {
-                    /* Tainted canvas (cross-origin) or decode failure — the tile
-                       keeps its flat fill and play mark. Degraded, not broken. */
-                }
-                finish();
-            };
-
-            v.addEventListener('loadedmetadata', () => {
-                const d = isFinite(v.duration) && v.duration > 0 ? v.duration : 2;
-                try { v.currentTime = Math.max(0.1, d / 2); } catch (e) { grab(); }
-            }, { once: true });
-            v.addEventListener('seeked', grab);
-            v.addEventListener('error', finish, { once: true });
-            setTimeout(() => { if (!done) { grab(); finish(); } }, 6000);
-
-            v.src = src;
-            v.load();
-        }
-
-        return { add(src, img) { jobs.push({ src, img }); pump(); } };
-    })();
-
-    /* ==========================================================================
-       GALLERY
-       --------------------------------------------------------------------------
-       Four rows of two, fitted to the viewport — nothing scrolls, so a drag can
-       begin the instant real movement is detected.
-
-       PLAY IS DECOUPLED FROM FOCUS. At rest every tile shows a poster and a
-       fake-glass play mark: no tile holds a video decoder at all. Tapping a
-       tile focuses it (propelled to the exact vertical centre of the viewport);
-       tapping its centre starts playback. It loops up to LOOP_LIMIT times and
-       then stops and re-offers the play mark, so an unattended tab doesn't decode
-       forever.
+         - #gallery-scroll is a real native-scroll element; its spacer child
+           exists purely to generate scroll range, so the browser's own touch/
+           momentum physics drives the gesture (same trick as desktop's own
+           #native-scroll-container). #gallery-viewport sits on top and is
+           JS-transformed per card from that scroll position, decoupled from
+           the cards' own DOM position — same decomposition as Echo's
+           perspective-container-over-window-scroll, just scoped to this
+           page's own scroll container instead of the document.
+         - Poster strategy: preload="metadata" plus nudging currentTime once
+           metadata loads, so the browser paints a frame using the SAME
+           element that'll eventually play — no extra video element, no
+           canvas, no data URL held in memory. Seeks to 0.6s rather than
+           Echo's 0.01s, since several of these clips open on black or a
+           near-empty first frame.
+         - No decode/playback cap beyond a small concurrency ceiling — up to
+           MAX_CONCURRENT videos can genuinely play at once, matching what the
+           user described from the reference implementation, rather than the
+           previous one-decoder-at-a-time rule.
        ========================================================================== */
     const Gallery = (() => {
-        const scroller = document.getElementById('gallery');
-        const stack = document.getElementById('stack');
-        const prompt = document.getElementById('gallery-prompt');
+        const page = document.getElementById('gallery');
+        const scrollEl = document.getElementById('gallery-scroll');
+        const spacerEl = document.getElementById('gallery-scroll-spacer');
+        const viewportEl = document.getElementById('gallery-viewport');
+        const welcomeEl = document.getElementById('gallery-welcome');
 
-        const tiles = [];
-        let focusIdx = -1;
-        let ticking = false;
-        let running = false;
-        let restoring = false;
-        let promptShown = false;
-        let promptDismissed = false;
-        let promptTimer = null;
-        let lastWrite = 0;
-        let visibleTimers = [];
+        /* Every entry points at its real source file directly — see the
+           video.src assignment below for why. */
+        const GALLERY_VIDEOS = [
+            { src: 'assets/projects/a-thousand-islands/videos/adaptive-motion.mp4', title: 'Adaptive Motion' },
+            { src: 'assets/projects/a-thousand-islands/videos/particle-engine.mp4', title: 'Particle Engine' },
+            { src: 'assets/projects/naivaa/videos/green-bag.mp4', title: 'Nairobi Bags' },
+            { src: 'assets/projects/a-thousand-islands/videos/voice-control.mp4', title: 'Voice Control' },
+            { src: 'assets/projects/a-thousand-islands/videos/visual-identity.mp4', title: 'Visual Identity' },
+            { src: 'assets/projects/graphic-design/videos/alexandra-gathukia.mp4', title: 'Logo Reveal' },
+            { src: 'assets/projects/a-thousand-islands/videos/spatial-experience.mp4', title: 'Spatial Experience' },
+            { src: 'assets/projects/a-thousand-islands/videos/dynamic-forms.mp4', title: 'Dynamic Forms' }
+        ];
 
-        const LOOP_LIMIT = 3;
+        /* ---- motion engine constants — Echo reference, with depth reworked
+           to never rely on opacity (see positionCards) ---- */
+        const STEP = 0.9;              // scroll-progress spacing between cards
+        const ARC_ANGLE = Math.PI * 0.777;
+        const SETTLE_POWER = 2.0;
+        const SETTLE_STRENGTH = 0.85;
+        const SETTLE_WINDOW = 2.5;
+        const Z_DEPTH = 620;            // widened from Echo's 550 — takes over some of
+                                        // the depth cue opacity used to carry
+        const SCALE_FALLOFF = 0.24;     // receding cards shrink rather than fade
+        const CULL_RANGE = 2.0;
+        const POSTER_SEEK = 0.6;        // seconds — later than Echo's 0.01 to dodge blank first frames
+        const MAX_CONCURRENT = 3;
 
-        VIDEOS.forEach((v, i) => {
-            const tile = document.createElement('div');
-            tile.className = 'tile';
+        function approach(current, target, ratePerSixtyHz, dt) {
+            const f = 1 - Math.pow(1 - ratePerSixtyHz, dt * 60);
+            return current + (target - current) * f;
+        }
 
-            const float = document.createElement('div');
-            float.className = 'tile-float';
+        /* ---- card construction ---- */
+        const cards = [];
+        const playingSet = new Set();
 
-            const body = document.createElement('div');
-            body.className = 'tile-body';
+        function pauseCard(rec) {
+            rec.video.pause();
+            playingSet.delete(rec);
+            rec.cover.style.opacity = '1';
+            rec.playBtn.classList.remove('is-pause');
+            rec.playBtn.classList.add('is-play');
+        }
+
+        function enforceConcurrencyCap(justAdded) {
+            if (playingSet.size <= MAX_CONCURRENT) return;
+            for (const rec of playingSet) {
+                if (rec !== justAdded) { pauseCard(rec); break; }
+            }
+        }
+
+        function buildCard(v, i) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'gallery-card';
+
+            const inner = document.createElement('div');
+            inner.className = 'gallery-card-inner';
+
+            const casing = document.createElement('div');
+            casing.className = 'gallery-casing';
 
             const video = document.createElement('video');
-            video.muted = true;
-            /* loop is counted manually so we can stop after LOOP_LIMIT passes. */
-            video.loop = false;
-            video.playsInline = true;
+            video.muted = true; video.loop = true; video.playsInline = true;
             video.setAttribute('playsinline', ''); video.setAttribute('muted', '');
-            video.preload = 'none';
-            video.disablePictureInPicture = true;
-            video.setAttribute('disableremoteplayback', '');
+            video.preload = 'metadata';
+            video.src = v.src;
 
-            const s1 = document.createElement('source');
-            s1.dataset.src = MOBILE_VIDEO_DIR + stripExt(v.src) + '.mp4';
-            s1.type = 'video/mp4';
-            const s2 = document.createElement('source');
-            s2.dataset.src = v.src;
-            video.append(s1, s2);
-
-            /* Poster: pre-generated file if one exists, otherwise the runtime
-               middle-frame capture fills it in. */
-            const poster = document.createElement('img');
-            poster.className = 'poster';
-            poster.decoding = 'async';
-            poster.alt = '';
-            poster.style.opacity = '0';
-            poster.src = POSTER_DIR + stripExt(v.src) + '.webp';
-            poster.addEventListener('load', function () { this.style.opacity = ''; }, { once: true });
-            poster.addEventListener('error', function () {
-                /* Clear the failed src or the browser paints its broken-image
-                   glyph; the queued capture will supply one shortly. */
-                this.removeAttribute('src');
-                this.style.opacity = '0';
+            /* First-frame poster trick: with preload="metadata" the browser
+               only fetches headers, not the full stream. Nudging currentTime
+               once metadata is known forces it to decode and paint that one
+               frame as the visible poster — no separate capture element. */
+            video.addEventListener('loadedmetadata', function onMeta() {
+                if (this.currentTime === 0) {
+                    try { this.currentTime = POSTER_SEEK; } catch (e) {}
+                }
             }, { once: true });
 
-            const play = document.createElement('div');
-            play.className = 'tile-play';
-            play.innerHTML = PLAY_GLYPH;
+            const cover = document.createElement('div');
+            cover.className = 'gallery-cover';
+            const title = document.createElement('h3');
+            title.className = 'gallery-card-title';
+            title.textContent = v.title;
+            cover.appendChild(title);
 
-            body.append(video, poster, play);
-            float.appendChild(body);
-            tile.appendChild(float);
-            stack.appendChild(tile);
+            casing.append(video, cover);
 
-            const rec = {
-                i, el: tile, float, body, video, posterEl: poster,
-                srcFull: v.src, sources: [s1, s2], attached: false, loops: 0,
-                baseX: 0, baseY: 0, baseRotZ: 0,
-                focusX: 0, focusY: 0, focusZ: 0,
-                w: 0, h: 0, cx: 0, cy: 0,
-                x: 0, y: 0, z: 0, rotX: 0, rotY: 0, rotZ: 0,
-                vx: 0, vy: 0, vz: 0, vRotX: 0, vRotY: 0, vRotZ: 0
-            };
+            /* Control cluster: video tile, then scrubber, then the play
+               button — in that order, centred, reading as one system. */
+            const controls = document.createElement('div');
+            controls.className = 'gallery-controls';
 
-            video.addEventListener('playing', () => tile.classList.add('playing', 'live'), { passive: true });
-            video.addEventListener('pause', () => tile.classList.remove('playing'), { passive: true });
-            video.addEventListener('ended', () => {
-                rec.loops += 1;
-                if (rec.loops < LOOP_LIMIT) {
-                    try { video.currentTime = 0; } catch (e) {}
-                    const p = video.play();
-                    if (p && p.catch) p.catch(() => {});
+            const scrub = document.createElement('input');
+            scrub.type = 'range';
+            scrub.className = 'gallery-scrub';
+            scrub.min = '0'; scrub.max = '100'; scrub.step = '0.1'; scrub.value = '0';
+            scrub.setAttribute('aria-label', 'Video progress');
+            let isScrubbing = false;
+
+            video.addEventListener('timeupdate', () => {
+                if (isScrubbing || !video.duration) return;
+                const pct = (video.currentTime / video.duration) * 100;
+                scrub.value = String(pct);
+                scrub.style.setProperty('--p', pct + '%');
+            });
+            scrub.addEventListener('input', () => {
+                isScrubbing = true;
+                scrub.style.setProperty('--p', scrub.value + '%');
+                if (video.duration) video.currentTime = (Number(scrub.value) / 100) * video.duration;
+            });
+            scrub.addEventListener('change', () => { isScrubbing = false; });
+            /* Dragging or tapping the track must never also toggle play via
+               the card's own click handler below. */
+            ['click', 'pointerdown'].forEach(evt => scrub.addEventListener(evt, (e) => e.stopPropagation()));
+
+            const playWrap = document.createElement('div');
+            playWrap.className = 'gallery-play-wrap';
+            const playBtn = document.createElement('div');
+            playBtn.className = 'gallery-play-btn is-play';
+            playBtn.innerHTML =
+                '<span class="gallery-icon-play"><svg viewBox="0 0 110 135" aria-hidden="true">' +
+                '<path d="M30.2,19.3l63.2,36.5c9,5.2,9,18.2,0,23.4l-63.2,36.5c-9,5.2-20.3-1.3-20.3-11.7V31c0-10.4,11.2-16.9,20.3-11.7h0Z"/>' +
+                '</svg></span>' +
+                '<span class="gallery-icon-pause"><svg viewBox="0 0 30 40" aria-hidden="true">' +
+                '<path d="M0,34.99c0,2.77,2.24,5.01,5,5.01s5-2.24,5-5.01V5.01C10,2.24,7.76,0,5,0S0,2.24,0,5.01v29.99Z"/>' +
+                '<path d="M20,34.99c0,2.77,2.24,5.01,5,5.01s5-2.24,5-5.01V5.01c0-2.77-2.24-5.01-5-5.01s-5,2.24-5,5.01v29.99Z"/>' +
+                '</svg></span>';
+            playWrap.appendChild(playBtn);
+
+            controls.append(scrub, playWrap);
+            inner.append(casing, controls);
+            wrapper.appendChild(inner);
+            viewportEl.appendChild(wrapper);
+
+            const rec = { i, wrapper, inner, video, cover, playBtn, display: null, transform: null };
+
+            wrapper.addEventListener('click', () => {
+                /* No drag-vs-tap disambiguation needed here — this is a plain
+                   native scroll container, and browsers already suppress the
+                   synthetic click that would otherwise follow a scroll drag. */
+                if (video.preload !== 'auto') video.preload = 'auto';
+                if (video.paused) {
+                    playingSet.add(rec);
+                    enforceConcurrencyCap(rec);
+                    const p = video.play(); if (p && p.catch) p.catch(() => {});
+                    cover.style.opacity = '0';
+                    playBtn.classList.remove('is-play'); playBtn.classList.add('is-pause');
                 } else {
-                    /* Three passes with no engagement — stop, restore the poster
-                       and re-offer the play mark. */
-                    rec.loops = 0;
-                    try { video.currentTime = 0; } catch (e) {}
-                    tile.classList.remove('playing', 'live');
+                    pauseCard(rec);
                 }
-            }, { passive: true });
+            });
 
-            tiles.push(rec);
-        });
-
-        /* Posters are part of the initial page load, not gated behind opening
-           the gallery. Gallery is a prominent, one-tap-away entry point and
-           should feel complete the instant it's opened, not fill in tile by
-           tile after the fact. */
-        tiles.forEach(t => PosterQueue.add(t.srcFull, t.posterEl));
-
-        /* ---- physics config ----
-           `restore` is the dedicated return-home spring — heavily damped,
-           snappy, deliberately not bouncy. It replaced the old approach of
-           reusing the idle spring (0.0045) for the return, which was roughly
-           five times weaker than the one that threw the tile forward (0.022)
-           and was the entire perceived cooldown. */
-        const PHYS = {
-            tension:  { default: 0.0045, hover: 0.022, restore: 0.060 },
-            friction: { default: 0.86,   hover: 0.90,  restore: 0.740 },
-            maxVelocity: 100,
-            idleBobAmplitude: 7,
-            idleRotAmplitude: 1.1,
-            maxVerticalTravel: 20,
-            extraRestoreTension: 0.025,
-            calm: 0.6
-        };
-
-        function write(t) {
-            t.el.style.transform =
-                `translate3d(${t.x.toFixed(2)}px, ${t.y.toFixed(2)}px, ${t.z.toFixed(2)}px) ` +
-                `rotateX(${t.rotX.toFixed(3)}deg) rotateY(${t.rotY.toFixed(3)}deg) rotateZ(${t.rotZ.toFixed(3)}deg)`;
+            return rec;
         }
 
-        let simTime = 0;
-        let lastFrame = 0;
+        GALLERY_VIDEOS.forEach((v, i) => cards.push(buildCard(v, i)));
 
-        function tick() {
-            /* Checked first and unconditionally — the 30fps throttle below has
-               its own early-return, and if !running were only handled at the
-               bottom of this function, hitting the throttle right after leave()
-               sets running=false would skip the ticking=false cleanup. That left
-               `ticking` stuck true forever, which made every kick() after the
-               first leave() a silent no-op — the physics loop never restarted,
-               so tiles just sat at their off-screen entrance seed on every visit
-               after the first. */
-            if (!running) { ticking = false; lastFrame = 0; return false; }
+        /* ---- entrance ---- */
+        function playEntrance() {
+            const inner = cards[0].inner;
+            inner.classList.add('gallery-entrance-start');
+            void inner.offsetWidth; // force reflow so the start state actually paints
+            inner.classList.remove('gallery-entrance-start');
+            inner.classList.add('gallery-entrance-go');
+            setTimeout(() => inner.classList.remove('gallery-entrance-go'), 700);
+        }
 
-            const now = performance.now();
-
-            /* Idle bob runs at 30fps. Nothing is being interacted with, nobody is
-               tracking an individual tile, and it halves the transform writes. */
-            const idleOnly = !restoring && focusIdx === -1;
-            if (idleOnly && now - lastWrite < 32) return true;
-            lastWrite = now;
-
-            let dt = lastFrame ? (now - lastFrame) / 1000 : 1 / 60;
-            lastFrame = now;
-            dt = Math.min(dt, 0.05);
-            simTime += dt;
-
-            const ticks = dt * 60;
-            let alive = false;
-
-            for (let i = 0; i < tiles.length; i++) {
-                const t = tiles[i];
-                const isSelected = focusIdx === i;
-                const someoneSelected = focusIdx !== -1;
-                const isIdle = !isSelected && !someoneSelected && !restoring;
-
-                const tension = (isSelected ? PHYS.tension.hover
-                    : restoring ? PHYS.tension.restore
-                    : PHYS.tension.default) * PHYS.calm;
-                const friction = isSelected ? PHYS.friction.hover
-                    : restoring ? PHYS.friction.restore
-                    : PHYS.friction.default;
-
-                let tx = t.baseX;
-                let ty = t.baseY + Math.sin(simTime * 1.2 + i * 2) * PHYS.idleBobAmplitude;
-                let tz = 0;
-                let tRotX = Math.sin(simTime * 0.8 + i) * PHYS.idleRotAmplitude;
-                let tRotY = Math.cos(simTime * 1.1 + i) * PHYS.idleRotAmplitude;
-                let tRotZ = t.baseRotZ + Math.sin(simTime * 1.3 + i) * PHYS.idleRotAmplitude;
-
-                if (isSelected) {
-                    /* focusZ is solved per-viewport in layout() so the tile lands
-                       at a predictable on-screen width, and focusY targets the
-                       EXACT vertical centre of the viewport. */
-                    tx = t.focusX; ty = t.focusY; tz = t.focusZ;
-                    tRotX = 0; tRotY = 0; tRotZ = 0;
-                    t.el.style.zIndex = 100;
-                } else if (someoneSelected) {
-                    /* Everything else pushes away from the viewport centre and
-                       recedes. Offsets are computed from the tile's slot, not from
-                       baseX/baseY — those are always 0, so the previous
-                       `baseX * 1.5` did nothing at all. */
-                    tx = t.awayX; ty = t.awayY; tz = -150;
-                    tRotY = t.awayX * 0.02;
-                    tRotX = -t.awayY * 0.02;
-                    t.el.style.zIndex = 10;
+        const WELCOME_TEXT = 'Welcome to my Vault';
+        let welcomeTimeout;
+        function startWelcomeTypewriter() {
+            clearTimeout(welcomeTimeout);
+            welcomeEl.textContent = '';
+            welcomeEl.classList.remove('done');
+            welcomeEl.style.opacity = '1';
+            if (REDUCED) { welcomeEl.textContent = WELCOME_TEXT; welcomeEl.classList.add('done'); return; }
+            let i = 0;
+            (function typeChar() {
+                if (i < WELCOME_TEXT.length) {
+                    welcomeEl.textContent += WELCOME_TEXT.charAt(i++);
+                    welcomeTimeout = setTimeout(typeChar, 65);
                 } else {
-                    t.el.style.zIndex = 10;
+                    welcomeEl.classList.add('done');
                 }
-
-                const effTension = 1 - Math.pow(1 - tension, ticks);
-                const effFriction = Math.pow(friction, ticks);
-
-                t.vx += (tx - t.x) * effTension;
-                t.vy += (ty - t.y) * effTension;
-                t.vz += (tz - t.z) * effTension;
-                t.vRotX += (tRotX - t.rotX) * effTension;
-                t.vRotY += (tRotY - t.rotY) * effTension;
-                t.vRotZ += (tRotZ - t.rotZ) * effTension;
-
-                const mv = PHYS.maxVelocity;
-                t.vx = clamp(t.vx, -mv, mv); t.vy = clamp(t.vy, -mv, mv); t.vz = clamp(t.vz, -mv, mv);
-
-                t.vx *= effFriction; t.vy *= effFriction; t.vz *= effFriction;
-                t.vRotX *= effFriction; t.vRotY *= effFriction; t.vRotZ *= effFriction;
-
-                t.x += t.vx * ticks; t.y += t.vy * ticks; t.z += t.vz * ticks;
-                t.rotX += t.vRotX * ticks; t.rotY += t.vRotY * ticks; t.rotZ += t.vRotZ * ticks;
-
-                if (isIdle) {
-                    const minY = t.baseY - PHYS.maxVerticalTravel;
-                    const maxY = t.baseY + PHYS.maxVerticalTravel;
-                    const restore = PHYS.extraRestoreTension * ticks;
-                    if (t.y < minY) t.vy += (minY - t.y) * restore;
-                    else if (t.y > maxY) t.vy += (maxY - t.y) * restore;
-                }
-
-                if (!isFinite(t.x) || !isFinite(t.y) || !isFinite(t.z)) {
-                    t.x = t.baseX; t.y = t.baseY; t.z = 0;
-                    t.vx = t.vy = t.vz = 0;
-                }
-
-                write(t);
-                alive = true;
-            }
-
-            /* Hand the restore spring back to the idle spring once everything has
-               genuinely settled, so the tighter tension doesn't stiffen the bob. */
-            if (restoring) {
-                let settled = true;
-                for (let i = 0; i < tiles.length; i++) {
-                    const t = tiles[i];
-                    if (Math.abs(t.z) > 2 || Math.hypot(t.vx, t.vy, t.vz) > 0.6) { settled = false; break; }
-                }
-                if (settled) restoring = false;
-            }
-
-            return alive;
+            })();
         }
 
-        function kick() {
-            if (ticking) return;
-            ticking = true;
-            lastFrame = 0;
-            Ticker.add(tick);
+        let hasSwiped = false;
+        function dismissWelcome() {
+            if (hasSwiped) return;
+            hasSwiped = true;
+            welcomeEl.style.opacity = '0';
         }
 
-        /* Balanced rows of up to maxPerRow. Two per row for 8 tiles. */
-        function partitionRows(n, maxPerRow) {
-            const numRows = Math.ceil(n / maxPerRow);
-            const base = Math.floor(n / numRows);
-            let remainder = n - base * numRows;
-            const rows = [];
-            for (let r = 0; r < numRows; r++) rows.push(base + (remainder-- > 0 ? 1 : 0));
-            return rows;
+        /* ---- per-frame motion — the Echo math, ported and adapted ---- */
+        function positionCards() {
+            const vw = window.innerWidth, vh = window.innerHeight;
+            const scrollP = currentScroll / vh;
+
+            cards.forEach((rec) => {
+                const localP = scrollP - (rec.i * STEP);
+                if (localP > -CULL_RANGE && localP < CULL_RANGE) {
+                    if (rec.display !== 'block') {
+                        rec.wrapper.style.display = 'block';
+                        rec.wrapper.style.opacity = '1';   // set once — never touched per-frame, see below
+                        rec.display = 'block';
+                    }
+
+                    /* "Magnetic settling": slows a card as it nears the centre
+                       focus point rather than moving through it linearly. */
+                    const settledP = localP * (1.0 - (Math.pow(Math.max(0, 1.0 - Math.abs(localP) * SETTLE_WINDOW), SETTLE_POWER) * SETTLE_STRENGTH));
+
+                    const posX = (-Math.sin(settledP * ARC_ANGLE) * vw * 0.65).toFixed(1);
+                    const posY = (settledP * -vh * 0.9).toFixed(1);
+                    const posZ = ((Math.cos(settledP * ARC_ANGLE) - 1.0) * Z_DEPTH).toFixed(1);
+                    const rotY = (settledP * 40.5).toFixed(2);
+                    const rotZ = (settledP * -4.5).toFixed(2);
+                    /* Depth is carried by position, rotation and scale only —
+                       cards never fade. Scale falloff compensates for opacity
+                       no longer doing part of that job. */
+                    const scale = (1 - Math.min(Math.abs(settledP), 1.4) * SCALE_FALLOFF).toFixed(3);
+                    const transform = `translate(-50%, -50%) translate3d(${posX}px, ${posY}px, ${posZ}px) rotateY(${rotY}deg) rotateZ(${rotZ}deg) scale(${scale})`;
+                    if (transform !== rec.transform) { rec.wrapper.style.transform = transform; rec.transform = transform; }
+                } else if (rec.display !== 'none') {
+                    /* Culled off-screen. Echo's own reference only hides these
+                       (display:none) without pausing — added an explicit
+                       pause+reset here since a hidden card serves no purpose
+                       still decoding in the background; costs nothing visible
+                       since it's already invisible either way. */
+                    rec.wrapper.style.display = 'none';
+                    rec.display = 'none';
+                    if (!rec.video.paused) pauseCard(rec);
+                    try { rec.video.currentTime = POSTER_SEEK; } catch (e) {}
+                }
+            });
+        }
+
+        let currentScroll = 0, targetScroll = 0;
+        let lastFrameTime = 0;
+        let running = false;
+
+        function frame(now) {
+            if (!running) return;
+            requestAnimationFrame(frame);
+            const dt = Math.min((now - (lastFrameTime || now)) / 1000, 1 / 30);
+            lastFrameTime = now;
+            currentScroll = approach(currentScroll, targetScroll, targetScroll < currentScroll ? 0.065 : 0.05, dt);
+            positionCards();
+        }
+
+        scrollEl.addEventListener('scroll', () => {
+            targetScroll = scrollEl.scrollTop;
+            if (!hasSwiped && targetScroll > 8) dismissWelcome();
+            if (scrollEl.scrollTop === 0) {
+                cards.forEach(rec => { if (!rec.video.paused) pauseCard(rec); });
+            }
+        }, { passive: true });
+
+        function resizeSpacer() {
+            const vh = window.innerHeight;
+            /* Scroll range stops exactly where the last card centres —
+               previously this added CULL_RANGE + 0.5 extra units past that
+               point, which is why scrolling continued into empty space after
+               the final video. The last video centering IS the end now. */
+            const totalP = (cards.length - 1) * STEP;
+            spacerEl.style.height = Math.round(vh * totalP) + 'px';
+        }
+
+        /* ---- public API ---- */
+        function enter() {
+            running = true;
+            lastFrameTime = 0;
+            currentScroll = 0; targetScroll = 0;
+            scrollEl.scrollTop = 0;
+            hasSwiped = false;
+
+            resizeSpacer();
+            positionCards();   // synchronous first pass so card 0 is correctly
+                                // placed before anything paints
+            requestAnimationFrame(frame);
+
+            /* First video fades in with a slight scale-up at the same moment
+               the typewriter starts — both are the immediate "you've arrived"
+               beat. */
+            playEntrance();
+            startWelcomeTypewriter();
+        }
+
+        function leave() {
+            running = false;
+            clearTimeout(welcomeTimeout);
+            welcomeEl.style.opacity = '0';
+            cards.forEach(rec => { if (!rec.video.paused) pauseCard(rec); });
         }
 
         function layout() {
-            const vw = window.innerWidth;
-            const vh = window.innerHeight;
-            const isLandscape = vw > vh;
-            const headerOffset = 56 + 20;
-            const availW = vw - 40;
-            const availH = vh - headerOffset - 24;
-
-            /* Portrait: TWO per row. Three per row was sized height-first and then
-               shrunk to satisfy the width constraint, which on a 390px phone
-               landed at ~114px-wide tiles inside 744px of available height — a
-               small object stranded in a big field, which is what read as
-               "off-centre".
-               Landscape: FOUR per row, so the 8 tiles form a 4x2 grid that
-               properly occupies a wide-short viewport instead of the 2-per-row
-               math shrinking everything toward a small centred block. */
-            const rows = partitionRows(tiles.length, isLandscape ? 4 : 2);
-            const gap = 12;
-
-            const maxCols = Math.max(...rows);
-            const ASPECT = 0.68; // height / width
-
-            /* Width-first: columns are the binding constraint in both
-               orientations here, so solve directly and only shrink if the stack
-               is too tall. */
-            let tileW = (availW - gap * (maxCols - 1)) / maxCols;
-            let tileH = tileW * ASPECT;
-
-            const neededColH = tileH * rows.length + gap * (rows.length - 1);
-            if (neededColH > availH) {
-                const scale = availH / neededColH;
-                tileW *= scale; tileH *= scale;
-            }
-            const contentH = tileH * rows.length + gap * (rows.length - 1);
-
-            /* TRUE vertical centre. The previous -5% "optical" lift was fighting
-               an existing asymmetry (76px claimed at the top vs 24px at the
-               bottom) in the opposite direction, and the two corrections together
-               were what made the composition read as floating high. */
-            const viewCY = vh / 2;
-            const startY = Math.max(headerOffset + 12, viewCY - contentH / 2);
-
-            /* Under CSS perspective P, an element at translateZ(z) appears scaled
-               by P / (P - z). Solving for the z that yields the desired on-screen
-               size makes the focused tile land predictably on any device. */
-            const PERSPECTIVE = 1200;
-            let focusScale;
-            if (isLandscape) {
-                /* A wide-short viewport can't be sized off width alone the way
-                   portrait is — a width-driven fill would frequently overflow
-                   vertically here. Fit both dimensions and take whichever is
-                   tighter. */
-                const padSide = vw * 0.08;
-                const padVert = vh * 0.12;
-                focusScale = Math.min((vw - padSide * 2) / tileW, (vh - padVert * 2) / tileH);
-            } else {
-                /* FOCUS_FILL trimmed from 0.86 so a focused tile no longer
-                   blankets its neighbours and swallows their taps. */
-                const FOCUS_FILL = 0.72;
-                focusScale = (vw * FOCUS_FILL) / tileW;
-            }
-            const focusZ = PERSPECTIVE * (1 - 1 / focusScale);
-
-            const viewCX = vw / 2;
-
-            let idx = 0;
-            rows.forEach((count, r) => {
-                const rowW = tileW * count + gap * (count - 1);
-                const startX = (vw - rowW) / 2;
-                const cy = startY + tileH / 2 + r * (tileH + gap);
-                for (let c = 0; c < count; c++) {
-                    const t = tiles[idx++];
-                    const cx = startX + tileW / 2 + c * (tileW + gap);
-                    t.cx = cx; t.cy = cy; t.w = tileW; t.h = tileH;
-                    t.el.style.left = (cx - tileW / 2) + 'px';
-                    t.el.style.top = (cy - tileH / 2) + 'px';
-                    t.el.style.width = tileW + 'px';
-                    t.el.style.height = tileH + 'px';
-                    t.baseX = 0;
-                    t.baseY = 0;
-                    t.baseRotZ = ((t.i % 3) - 1) * 1.5;
-                    /* Exact viewport centre when focused. */
-                    t.focusX = viewCX - cx;
-                    t.focusY = viewCY - cy;
-                    t.focusZ = focusZ;
-                    /* Outward drift when something else is focused. */
-                    let dx = cx - viewCX, dy = cy - viewCY;
-                    const mag = Math.hypot(dx, dy) || 1;
-                    t.awayX = (dx / mag) * 46;
-                    t.awayY = (dy / mag) * 34;
-                    write(t);
-                }
-            });
+            resizeSpacer();
+            positionCards();
         }
-
-        /* ---- entrance ----
-           Fully self-sufficient: cancels any pending visibility timers and
-           hard-resets every tile's class/position BEFORE scheduling anything new,
-           so entry never depends on a previous leave() having finished cleanly.
-           (The scattered-tiles regression came from leave()'s per-tile
-           "remove visible" timers still being in flight when a quick return
-           called enter() again — those bare, uncancelled setTimeouts would fire
-           after re-entry and silently hide tiles that had just been re-added.
-           Storing and clearing the handles here removes that race outright.) */
-        function clearVisibleTimers() {
-            visibleTimers.forEach(id => clearTimeout(id));
-            visibleTimers.length = 0;
-        }
-
-        function enter() {
-            clearTimeout(promptTimer);
-            clearVisibleTimers();
-
-            restoring = false;
-            running = true;
-            layout();
-
-            const vcx = window.innerWidth / 2;
-            const vcy = window.innerHeight / 2;
-
-            tiles.forEach((t, i) => {
-                t.el.classList.remove('visible');   // synchronous, unconditional
-
-                let dx = t.cx - vcx;
-                let dy = t.cy - vcy;
-                const mag = Math.hypot(dx, dy);
-                if (mag < 40) { const a = (i / tiles.length) * Math.PI * 2; dx = Math.cos(a); dy = Math.sin(a); }
-                else { dx /= mag; dy /= mag; }
-                const dist = 420 + Math.random() * 260;
-
-                t.x = dx * dist;
-                t.y = dy * dist + 260;
-                t.z = -900;
-                t.rotX = 0; t.rotY = 0; t.rotZ = 0;
-                t.vx = 0; t.vy = 0; t.vz = 0;
-                t.vRotX = 0; t.vRotY = 0; t.vRotZ = 0;
-                write(t);
-                visibleTimers.push(setTimeout(() => t.el.classList.add('visible'), i * 60));
-            });
-
-            kick();
-
-            const settleMs = tiles.length * 60 + 1200;
-            promptTimer = setTimeout(showPrompt, settleMs);
-        }
-
-        function showPrompt() {
-            promptDismissed = false;
-            promptShown = true;
-            prompt.classList.add('on');
-        }
-        function dismissPrompt() {
-            if (promptDismissed) return;
-            promptDismissed = true;
-            prompt.classList.remove('on');
-        }
-
-        /* ---- leave ----
-           A plain page-level opacity cross-fade handles the whole visual
-           transition (see the .page CSS transition and goto()) — no per-tile
-           fly-out here. This just stops holding a video and parks the physics
-           loop; positions are irrelevant until the next enter() hard-resets
-           them anyway. */
-        function leave() {
-            clearTimeout(promptTimer);
-            clearVisibleTimers();
-            prompt.classList.remove('on');
-            promptShown = false;
-            promptDismissed = false;
-
-            if (focusIdx !== -1) { stopTile(tiles[focusIdx]); focusIdx = -1; }
-            tiles.forEach(t => t.el.classList.remove('focused'));
-
-            restoring = false;
-            running = false;
-            tiles.forEach(t => { stopTile(t); detach(t); });
-        }
-
-        function attach(t, warm) {
-            if (!t.attached) { t.sources.forEach(s => { s.src = s.dataset.src; }); t.attached = true; t.video.load(); }
-            t.video.preload = 'auto';
-            if (warm) { t.video.pause(); try { t.video.currentTime = 0; } catch (e) {} }
-        }
-        function detach(t) {
-            if (!t.attached) return;
-            t.video.pause();
-            t.sources.forEach(s => s.removeAttribute('src'));
-            t.video.removeAttribute('src');
-            t.video.load();
-            t.video.preload = 'none';
-            t.attached = false;
-            t.el.classList.remove('playing', 'live');
-        }
-
-        function stopTile(t) {
-            t.video.pause();
-            t.loops = 0;
-            try { t.video.currentTime = 0; } catch (e) {}
-            t.el.classList.remove('playing', 'live');
-        }
-
-        /* Only the focused tile ever holds a decoder; its neighbour is warmed but
-           never played. Everything else stays fully detached, which is strictly
-           cheaper than the previous always-play-tile-0 arrangement. */
-        function refreshPlayback() {
-            const want = focusIdx;
-            const warm = want >= 0 ? Math.min(want + 1, tiles.length - 1) : -1;
-            tiles.forEach((t, i) => {
-                if (i === want) attach(t, false);
-                else if (i === warm) attach(t, true);
-                else { if (t.attached) stopTile(t); detach(t); }
-            });
-        }
-
-        function setFocus(idx) {
-            if (focusIdx !== -1 && focusIdx !== idx) stopTile(tiles[focusIdx]);
-            focusIdx = idx;
-            restoring = false;
-            tiles.forEach((t, i) => {
-                t.el.classList.toggle('focused', i === idx);
-            });
-            kick();
-        }
-
-        function clearFocus() {
-            if (focusIdx !== -1) stopTile(tiles[focusIdx]);
-            focusIdx = -1;
-            restoring = true;
-            tiles.forEach(t => t.el.classList.remove('focused'));
-            kick();
-        }
-
-        function onTap(t, e) {
-            dismissPrompt();
-
-            if (focusIdx !== t.i) {
-                setFocus(t.i);
-                refreshPlayback();
-                return;
-            }
-
-            /* Already focused. Playing -> pause and bring the play mark back. */
-            if (!t.video.paused) { t.video.pause(); return; }
-
-            /* Focused and paused: near the centre starts playback, anywhere else
-               dismisses. Splitting these is what stops an off-target tap from
-               silently pausing a video the user was aiming past. */
-            const r = t.el.getBoundingClientRect();
-            const dx = e.clientX - (r.left + r.width / 2);
-            const dy = e.clientY - (r.top + r.height / 2);
-            if (Math.hypot(dx, dy) < r.width * 0.26) {
-                t.loops = 0;
-                attach(t, false);
-                const p = t.video.play();
-                if (p && p.catch) p.catch(() => {});
-            } else {
-                clearFocus();
-                refreshPlayback();
-            }
-        }
-
-        const MOVE_THRESHOLD = 6;
-        const TAP_MS = 320;
-
-        tiles.forEach(t => {
-            let sx = 0, sy = 0, t0 = 0, down = false;
-
-            t.el.addEventListener('pointerdown', (e) => {
-                if (e.pointerType === 'mouse' && e.button !== 0) return;
-                dismissPrompt();
-                down = true;
-                sx = e.clientX; sy = e.clientY; t0 = performance.now();
-                try { t.el.setPointerCapture(e.pointerId); } catch (err) {}
-            }, { passive: true });
-
-            t.el.addEventListener('pointerup', (e) => {
-                if (!down) return;
-                down = false;
-                const dt = performance.now() - t0;
-                const dist = Math.hypot(e.clientX - sx, e.clientY - sy);
-                /* A real tap: didn't travel far and wasn't a long press. Anything
-                   else (an accidental swipe across a tile) is simply ignored —
-                   there is no drag behaviour to fall back to. */
-                if (dist < MOVE_THRESHOLD && dt < TAP_MS) onTap(t, e);
-            }, { passive: true });
-
-            t.el.addEventListener('pointercancel', () => { down = false; }, { passive: true });
-        });
-
-        /* Tapping anywhere off a tile returns the focused video to its slot. */
-        scroller.addEventListener('pointerdown', (e) => {
-            if (focusIdx === -1) return;
-            if (e.target.closest('.tile')) return;
-            clearFocus();
-            refreshPlayback();
-        }, { passive: true });
 
         document.addEventListener('visibilitychange', () => {
-            if (document.hidden && focusIdx >= 0) tiles[focusIdx].video.pause();
+            if (document.hidden) cards.forEach(rec => { if (!rec.video.paused) rec.video.pause(); });
         });
 
         return { enter, leave, layout };
     })();
+
 
     /* ==========================================================================
        LAYOUT / RESIZE
@@ -3155,6 +2948,7 @@ async function initDesktop() {
     const Viewport = (() => {
         const subscribers = new Set();
         let pending = false;
+        let pendingForce = false;
 
         /* The height the heavy subscribers were last sized to. Distinct from
            state.height, which tracks the live value for CSS. */
@@ -3183,12 +2977,15 @@ async function initDesktop() {
         const MIN_CARD_PX = 260;
         const GAP_FACTOR = 1.30;
 
-        /* Returns true when the change is big enough to warrant a full relayout. */
-        function recompute() {
+        /* Returns true when the change is big enough to warrant a full relayout.
+           `force`, when true, bypasses BOTH guards below unconditionally — this
+           is what the settle-timer and the poll-based backstop rely on to
+           guarantee a real re-sync regardless of what state already believes. */
+        function recompute(force) {
             const { w, h } = read();
             const dpr = window.devicePixelRatio || 1;
 
-            const anyChange = (w !== state.width || h !== state.height || dpr !== state.dpr);
+            const anyChange = force || (w !== state.width || h !== state.height || dpr !== state.dpr);
             if (!anyChange) return false;
 
             state.width = w;
@@ -3209,7 +3006,7 @@ async function initDesktop() {
             const widthChanged = w !== committedWidth;
             const dprChanged = dpr !== committedDpr;
             const heightDelta = Math.abs(h - committedHeight);
-            const meaningful = widthChanged || dprChanged || heightDelta > URL_BAR_TOLERANCE;
+            const meaningful = force || widthChanged || dprChanged || heightDelta > URL_BAR_TOLERANCE;
 
             if (!meaningful) return false;
 
@@ -3219,12 +3016,15 @@ async function initDesktop() {
             return true;
         }
 
-        function schedule() {
-            if (pending) return;
+        function schedule(force) {
+            if (pending) { if (force) pendingForce = true; return; }
             pending = true;
+            pendingForce = !!force;
             requestAnimationFrame(() => {
                 pending = false;
-                if (recompute()) {
+                const f = pendingForce;
+                pendingForce = false;
+                if (recompute(f)) {
                     subscribers.forEach(fn => { try { fn(state); } catch (e) { console.error(e); } });
                 }
             });
@@ -3240,20 +3040,14 @@ async function initDesktop() {
            browser then stretches a stale-aspect buffer to fill it, which is
            exactly what the distorted orb/folders look like.
 
-           Forcing one guaranteed re-read after things stop moving costs
-           nothing: recompute() returns false and notifies nobody if the
-           dimensions genuinely haven't changed. */
+           schedule(true) now genuinely forces a full re-notify regardless of
+           what state already believes — recompute()'s force parameter bypasses
+           BOTH of its guards, not just the second one. */
         let settleTimer = null;
         function scheduleWithSettle() {
             schedule();
             clearTimeout(settleTimer);
-            settleTimer = setTimeout(() => {
-                /* invalidate() forces the next recompute to count as
-                   meaningful, so a size the gate previously dismissed can
-                   never leave the renderer stranded at the wrong dimensions. */
-                committedHeight = -99999;
-                schedule();
-            }, 220);
+            settleTimer = setTimeout(() => schedule(true), 220);
         }
 
         window.addEventListener('resize', scheduleWithSettle, { passive: true });
@@ -3261,16 +3055,34 @@ async function initDesktop() {
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', scheduleWithSettle, { passive: true });
         }
-        /* ResizeObserver reports the element's actual settled box and is far
-           more reliable than the window resize event across animated
-           transitions — this is the primary signal, the listeners above are
-           the safety net. */
-        if (typeof ResizeObserver !== 'undefined') {
-            try {
-                new ResizeObserver(scheduleWithSettle).observe(document.documentElement);
-            } catch (e) { /* non-fatal — the listeners above still cover it */ }
-        }
         document.addEventListener('fullscreenchange', scheduleWithSettle, { passive: true });
+
+        /* Definitive backstop: direct polling of window.innerWidth/innerHeight,
+           compared against the committed values layoutScene1 was actually last
+           sized to. The previous fix here used a ResizeObserver on
+           document.documentElement, reasoning it would be a more reliable
+           signal than the resize event across animated OS transitions — but
+           html's own width/height are set via --app-w/--app-h, which are ONLY
+           EVER written by this same recompute() function. That made the
+           observer circular: it could only ever fire as a consequence of
+           recompute() having already run, so it carried no information the
+           window/visualViewport listeners above didn't already have, and
+           couldn't catch a case where neither of those events fired correctly.
+
+           Polling window.innerWidth/innerHeight directly has no such blind
+           spot — it reads the browser's own reported viewport, independent of
+           any event mechanism, so it cannot miss a genuine size change
+           regardless of whether the OS/browser fires a resize event for it.
+           Comparing against committedWidth/committedHeight first (rather than
+           unconditionally forcing) keeps the steady-state cost to two number
+           comparisons a few times a second — the expensive forced path only
+           runs when there's actual evidence of drift. */
+        setInterval(() => {
+            const { w, h } = read();
+            if (w !== committedWidth || Math.abs(h - committedHeight) > 1) {
+                schedule(true);
+            }
+        }, 350);
 
         recompute();
 
@@ -3284,10 +3096,12 @@ async function initDesktop() {
             get compact() { return state.compact; },
             get dpr() { return state.dpr; },
             onChange(fn) { subscribers.add(fn); return () => subscribers.delete(fn); },
-            refresh: schedule,
-            /* Escape hatch: forces the next recompute to be treated as meaningful.
-               Used when a scene mounts and must be sized exactly. */
-            invalidate() { committedHeight = -99999; }
+            /* refresh(true) forces a real re-sync regardless of what state
+               already believes — recompute()'s force parameter now bypasses
+               both of its guards. Used on bfcache restore, where dimensions
+               may not have changed by the checks recompute() would otherwise
+               make, but GPU resources may have been dropped while frozen. */
+            refresh: schedule
         };
     })();
 
@@ -5902,20 +5716,28 @@ async function initDesktop() {
         const mouseMM = new THREE.Vector2(-999, -999);
         let isHovering = false, isPointerDown = false, holdFactor = 0;
 
-        /* Touch-rotate suppression. Pulse and touch both write to
-           camera.position (Pulse via nudgeRotation, OrbitControls via its own
-           touch handler) and to mouseMM — two independent authors of the same
-           state, each assuming it's the only one, which is what produced the
-           stutter when both ran at once. Rather than try to arbitrate per
-           frame, touch-rotate is simply switched off while Pulse is live.
-           Mouse is deliberately untouched. */
+        /* Input suppression while Pulse is live. Pulse and manual pointer
+           input (mouse OR touch) both write to camera.position (Pulse via
+           nudgeRotation, OrbitControls via its own drag handling) and to
+           mouseMM — two independent authors of the same state, each assuming
+           it's the only one, which is what produced the stutter when both
+           ran at once. Rather than try to arbitrate per frame, both mouse and
+           touch drag-rotate are switched off while Pulse is live. */
         let defaultTouches = null;
+        let defaultMouseButtons = null;
         let touchSuppressed = false;
         function applyTouchSuppression() {
-            if (!controls || !defaultTouches) return;
-            controls.touches = touchSuppressed
-                ? { ONE: null, TWO: null }
-                : Object.assign({}, defaultTouches);
+            if (!controls) return;
+            if (defaultTouches) {
+                controls.touches = touchSuppressed
+                    ? { ONE: null, TWO: null }
+                    : Object.assign({}, defaultTouches);
+            }
+            if (defaultMouseButtons) {
+                controls.mouseButtons = touchSuppressed
+                    ? { LEFT: null, MIDDLE: null, RIGHT: null }
+                    : Object.assign({}, defaultMouseButtons);
+            }
         }
 
         function makeTileGeometry() {
@@ -6320,10 +6142,10 @@ async function initDesktop() {
             controls.enablePan = false;
             controls.minDistance = 4;
             controls.maxDistance = 20;
-            /* Captured so touch-rotate can be switched off and restored exactly.
-               Mouse config (controls.mouseButtons) is never touched — mouse drag
-               keeps working identically whether Pulse is on or off. */
+            /* Captured so both touch- and mouse-drag-rotate can be switched
+               off and restored exactly while Pulse is live. */
             defaultTouches = Object.assign({}, controls.touches);
+            defaultMouseButtons = Object.assign({}, controls.mouseButtons);
             applyTouchSuppression();
 
             buildGlobe();
@@ -6525,6 +6347,19 @@ async function initDesktop() {
             setPointerDown(v) { if (mounted) isPointerDown = v; },
             clearPointer() { isPointerDown = false; mouseMM.set(-999, -999); },
             nudgeRotation,
+            /* Independent of mouseMM (which Pulse continuously overwrites to
+               screen-centre while live) — tests whether a given screen point
+               actually lands on the globe. Only ever called on a discrete
+               click, not per-frame, so a fresh Raycaster/Vector2 each call
+               costs nothing. */
+            hitsSphere(x, y) {
+                if (!mounted || !revealed || !hitSphere) return false;
+                const nx = (x / V.width) * 2 - 1;
+                const ny = -(y / V.height) * 2 + 1;
+                const rc = new THREE.Raycaster();
+                rc.setFromCamera(new THREE.Vector2(nx, ny), camera);
+                return rc.intersectObject(hitSphere).length > 0;
+            },
             /* Pulse calls this on enable/disable. Idempotent and safe before
                mount — mount() re-applies whatever the current state is. */
             setTouchSuppressed(v) {
@@ -6591,6 +6426,7 @@ async function initDesktop() {
         const subtextEl = document.getElementById('pulse-subtext');
         const skipEl = document.getElementById('pulse-skip');
         const deniedEl = document.getElementById('pulse-denied');
+        const inputBlockedEl = document.getElementById('pulse-input-blocked');
 
         const PALM_ICON = `<svg viewBox="0 0 24 30" fill="currentColor" aria-hidden="true">
             <path d="M15,27c-2.1,0-4-.8-5.5-2.3l-6.5-6.5c-.4-.4-.6-.8-.6-1.4,0-1.1.9-1.9,1.9-1.9s.9.1,1.3.3l2.7,1.4V7c0-1.1.9-2,2-2s.7,0,1,.3v-.3c0-1.1.9-2,2-2s2,.9,2,2v.3c.3-.2.6-.3,1-.3,1.1,0,2,.9,2,2v.3c.3-.2.6-.3,1-.3,1.1,0,2,.9,2,2v11.5c0,3.6-2.9,6.5-6.5,6.5ZM4.4,16c-.5,0-.9.4-.9.9s0,.5.3.6l6.5,6.5c1.3,1.3,3,2,4.8,2,3,0,5.5-2.5,5.5-5.5v-11.5c0-.6-.4-1-1-1s-1,.4-1,1v4.5c0,.3-.2.5-.5.5s-.5-.2-.5-.5v-6.5c0-.6-.4-1-1-1s-1,.4-1,1v6.5c0,.3-.2.5-.5.5s-.5-.2-.5-.5V5c0-.6-.4-1-1-1s-1,.4-1,1v8.5c0,.3-.2.5-.5.5s-.5-.2-.5-.5v-6.5c0-.6-.4-1-1-1s-1,.4-1,1v10.5c0,.2,0,.3-.2.4-.1,0-.3,0-.5,0l-3.5-1.7c-.3-.1-.6-.2-.9-.2Z"/>
@@ -6937,6 +6773,32 @@ async function initDesktop() {
             deniedTimer = setTimeout(() => deniedEl.classList.remove('visible'), 5000);
         }
 
+        /* ---- blocked-input notice ----
+           Triggered ONLY by a deliberate click/press-and-hold that lands on
+           the sphere itself (see Scene3.hitsSphere) while Pulse is fully live
+           — never during onboarding, never from hover, never from touch.
+           Auto-dismisses after a short moment rather than waiting for a
+           dismiss tap; a second trigger attempt while it's already showing
+           dismisses it immediately instead of re-showing (handled by the
+           `blockedVisible` check up front — the caller's own click already
+           satisfies "click again to dismiss"). */
+        let blockedVisible = false;
+        let blockedAutoTimer = null;
+        function notifyInputBlocked() {
+            if (state !== LIVE) return;   // never during onboarding
+            if (blockedVisible) { dismissInputBlocked(); return; }
+            blockedVisible = true;
+            inputBlockedEl.classList.add('visible');
+            clearTimeout(blockedAutoTimer);
+            blockedAutoTimer = setTimeout(dismissInputBlocked, 2600);
+        }
+        function dismissInputBlocked() {
+            if (!blockedVisible) return;
+            blockedVisible = false;
+            inputBlockedEl.classList.remove('visible');
+            clearTimeout(blockedAutoTimer);
+        }
+
         /* ---- state transitions ----
            dockTimer is the fix for the stuck-tutorial bug: the previous
            version's dock/dismiss handoff used a bare, uncancelled setTimeout,
@@ -7067,9 +6929,12 @@ async function initDesktop() {
             noticeEl.classList.remove('visible');
             onboardEl.classList.remove('visible');
             deniedEl.classList.remove('visible');
+            inputBlockedEl.classList.remove('visible');
+            blockedVisible = false;
+            clearTimeout(blockedAutoTimer);
             Scene3.setPointerDown(false);
             Scene3.clearPointer();
-            Scene3.setTouchSuppressed(false);   // touch behaves exactly as before again
+            Scene3.setTouchSuppressed(false);   // touch and mouse both behave exactly as before again
             setToggleOn(false);
             state = OFF;
             handVisible = false; handLostAt = 0; pinching = false;
@@ -7094,7 +6959,10 @@ async function initDesktop() {
             /* Called once by the routing section when the scene-3 entrance
                transition finishes, so the toggle becomes discoverable as soon
                as the page has settled. */
-            revealToggleOnce() { revealToggle(); }
+            revealToggleOnce() { revealToggle(); },
+            /* Called by the mouse/touch handlers when an interaction attempt
+               is blocked because Pulse currently has input suppressed. */
+            notifyInputBlocked() { notifyInputBlocked(); }
         };
     })();
 
@@ -7336,12 +7204,14 @@ async function initDesktop() {
     }, { passive: false });
 
     /* ---- Scene 3: touch (PASSIVE — OrbitControls handles its own gestures) ----
-       Suppressed while Pulse is live. These write the same setPointer /
-       setPointerDown state Pulse writes every frame, so letting both run at
-       once is what made the globe stutter. Mouse/trackpad handlers below are
-       deliberately NOT gated. */
+       Suppressed while Pulse is live, same as mouse below — both write the
+       same setPointer/setPointerDown state Pulse writes every frame, which is
+       what made the globe stutter when both ran at once. Touch stays silently
+       blocked — it never triggers the notice, only a deliberate click on the
+       sphere itself does (see handlePointerDown below). */
     sceneThreeEl.addEventListener('touchstart', (e) => {
-        if (Router.scene !== 3 || Scene3.touchSuppressed) return;
+        if (Router.scene !== 3) return;
+        if (Scene3.touchSuppressed) return;
         hideInteractText();
         Scene3.setPointerDown(true);
         Scene3.setPointer(e.touches[0].clientX, e.touches[0].clientY);
@@ -7359,6 +7229,10 @@ async function initDesktop() {
     /* ---- pointer (mouse / trackpad) ---- */
     function handlePointerDown(e) {
         if (Router.scene === 3) {
+            if (Scene3.touchSuppressed) {
+                if (Scene3.hitsSphere(e.clientX, e.clientY)) Pulse.notifyInputBlocked();
+                return;
+            }
             hideInteractText();
             Scene3.setPointerDown(true);
             Scene3.setPointer(e.clientX, e.clientY);
@@ -7378,7 +7252,11 @@ async function initDesktop() {
     }
 
     function handlePointerMove(e) {
-        if (Router.scene === 3) { Scene3.setPointer(e.clientX, e.clientY); return; }
+        if (Router.scene === 3) {
+            if (Scene3.touchSuppressed) return;
+            Scene3.setPointer(e.clientX, e.clientY);
+            return;
+        }
         if (carouselDragging && Router.scene === 2 && S2.activeCluster !== -1) {
             S2.applyCarouselDelta(carouselPrevX - e.clientX);
             carouselPrevX = e.clientX;
@@ -7407,7 +7285,11 @@ async function initDesktop() {
     }
 
     function handlePointerUp(e) {
-        if (Router.scene === 3) { Scene3.setPointerDown(false); return; }
+        if (Router.scene === 3) {
+            if (Scene3.touchSuppressed) return;
+            Scene3.setPointerDown(false);
+            return;
+        }
         if (carouselDragging) {
             carouselDragging = false;
             container.style.cursor = 'grab';
@@ -7597,8 +7479,7 @@ async function initDesktop() {
         if (!e.persisted) return;
         /* Restored from bfcache. Nothing was disposed, but the GPU may have
            dropped resources while frozen and the viewport may have changed. */
-        V.invalidate();
-        V.refresh();
+        V.refresh(true);
         if (!envRT) rebuildFolderEnvironment();
         layoutScene1();
     });
