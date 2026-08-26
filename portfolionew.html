@@ -573,7 +573,9 @@
 
         /* Static link preview — favicon-equivalent glyph, site name, URL. No
            iframe and no network request: the target sites are never contacted,
-           so this costs nothing and can't leak the visitor's browsing. */
+           so this costs nothing and can't leak the visitor's browsing. Same
+           darker grey-tinted glass as #hp-copied now (was too clear/weak on
+           its own), so the two floating cards read as one family. */
         #hp-preview {
             position: fixed;
             z-index: 420;
@@ -582,9 +584,9 @@
             gap: 12px;
             padding: 12px 16px;
             border-radius: 16px;
-            background: rgba(255, 255, 255, 0.55);
-            border: 1px solid rgba(255, 255, 255, 0.7);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
+            background: rgba(205, 205, 205, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
             opacity: 0;
             pointer-events: none;
             transform: translateY(6px) scale(0.97);
@@ -595,7 +597,7 @@
             width: 34px; height: 34px;
             display: flex; align-items: center; justify-content: center;
             border-radius: 10px;
-            background: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.4);
             flex: 0 0 auto;
         }
         .hp-preview-icon svg { width: 21px; height: 21px; fill: #3f3f3f; }
@@ -1042,26 +1044,51 @@
             --control-h: 36px;
             --header-h: 56px;
 
-            /* Mobile home vertical rhythm. Every offset below is derived from
-               these, so the tab bar, the panels under it and the profile stack
-               move together instead of being nudged individually. vh-clamped so
-               the composition compresses on short phones rather than pushing
-               the description off-screen. */
-            --tabbar-h: 52px;
-            --tab-gap-top: clamp(14px, 3.4vh, 28px);
-            --tab-gap-bottom: clamp(12px, 2.6vh, 22px);
-            /* Panels always start BELOW the bar. Previously they started
-               header+60px while the bar ran header+28 -> header+80, so the
-               heading and description sat under it. */
-            --panel-top: calc(var(--header-h) + env(safe-area-inset-top, 0px)
-                              + var(--tab-gap-top) + var(--tabbar-h) + var(--tab-gap-bottom));
-            --panel-bottom: env(safe-area-inset-bottom, 0px);
+            /* --mvh is the REAL visible viewport height, written from JS to
+               :root (see writeViewportUnits) — raw `vh` on mobile excludes
+               the URL bar and therefore overstates the space available, which
+               is exactly how content ends up hanging off the bottom of
+               shorter phones. Anything that must fit the screen is sized
+               against --app-mh / --panel-h, never against raw vh.
+
+               NOTE: the derived vars (--app-mh, --tabbar-h, --panel-top,
+               --panel-h) are declared on #mobile-root, not here. A custom
+               property is substituted using the values in scope at the
+               element where it is DECLARED, so if they lived at :root the
+               landscape block's override of --tabbar-h on #mobile-root would
+               never reach --panel-top/--panel-h. */
+            --mvh: 1vh;           /* JS-overridden; this is the pre-JS fallback */
+            --mvw: 1vw;
 
             --r-lg: 20px;
             --r-md: 18px;
 
             --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
             --ease-soft: cubic-bezier(0.33, 1, 0.68, 1);
+        }
+
+        /* Mobile home vertical rhythm. Declared HERE (on #mobile-root) so the
+           landscape block further down, which overrides --tabbar-h and the
+           gaps on this same element, correctly re-derives everything below
+           them. Every offset is derived from these, so the tab bar, the
+           panels under it and the profile stack move together instead of
+           being nudged individually. */
+        #mobile-root {
+            --app-mh: calc(var(--mvh) * 100);
+            --tabbar-h: clamp(44px, calc(var(--app-mh) * 0.068), 52px);
+            --tab-gap-top: clamp(12px, calc(var(--app-mh) * 0.032), 28px);
+            --tab-gap-bottom: clamp(10px, calc(var(--app-mh) * 0.024), 22px);
+            /* Panels always start BELOW the bar. Previously they started
+               header+60px while the bar ran header+28 -> header+80, so the
+               heading and description sat under it. */
+            --panel-top: calc(var(--header-h) + env(safe-area-inset-top, 0px)
+                              + var(--tab-gap-top) + var(--tabbar-h) + var(--tab-gap-bottom));
+            --panel-bottom: env(safe-area-inset-bottom, 0px);
+            /* What's ACTUALLY left for panel content once the header, tab bar
+               and safe areas are taken out. Content that must not overflow is
+               sized as a fraction of this, so it shrinks on a small device
+               instead of running off the frame. */
+            --panel-h: calc(var(--app-mh) - var(--panel-top) - var(--panel-bottom));
         }
 
         #mobile-root, #mobile-root * { box-sizing: border-box; }
@@ -1415,7 +1442,9 @@
             from { opacity: 0; transform: translateY(-8px) scale(0.82); }
             to   { opacity: 1; transform: translateY(0) scale(1); }
         }
-        #mobile-root .tab-btn svg { width: 24px; height: 24px; fill: currentColor; transition: color 0.32s var(--ease-soft); }
+        /* No colour transition: the icons never change colour, so there is
+           nothing to animate. */
+        #mobile-root .tab-btn svg { width: 24px; height: 24px; fill: currentColor; }
         /* Optical correction: Naivaa's and A Thousand Islands' source artwork
            carries more internal padding relative to its own viewBox, so at
            identical box sizes they read visibly smaller than the other glyphs.
@@ -1423,9 +1452,11 @@
         #mobile-root .tab-btn.icon-naivaa svg,
         #mobile-root .tab-btn.icon-a-thousand-islands svg { width: 32px; height: 32px; }
         #mobile-root .tab-btn.icon-profile svg { width: 19px; height: 19px; }
-        /* Active icon turns pure white. Driven through currentColor on the
-           button, so the same inline SVG serves both states — no second asset. */
-        #mobile-root .tab-btn[aria-selected="true"] { color: #ffffff; }
+        /* Icons stay at their native dark-grey (var(--ink)) in every state —
+           there is deliberately NO aria-selected colour rule. The only visual
+           change on navigation is the highlight indicator sliding between
+           icons; a per-icon colour swap has to keep up with rapid state
+           changes and read as broken/laggy when it doesn't. */
         #mobile-root .tab-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 999px; }
 
         /* ==========================================================================
@@ -1474,6 +1505,25 @@
         #mobile-root #profile-panel {
             padding: 0 26px;
             min-height: 0;
+            /* No overflow property here, deliberately — `visible`, as it was
+               before round 25.
+
+               #profile-panel and #projects-panel are absolutely-positioned
+               siblings covering the identical rect, and #projects-panel holds
+               #carousel's native touch-scroll surface. Round 25 added
+               overflow-y:auto + -webkit-overflow-scrolling:touch here as a
+               speculative "content can never be clipped" safety net; that
+               created a second momentum-scroll layer over the carousel's own
+               (round 26's post-rotation freeze). Round 26 changed it to
+               overflow:hidden, which still made this element a scroll
+               container / stacking context layered over the carousel, and
+               exposed the initial-load freeze instead.
+
+               The safety net was never actually needed: content here is sized
+               against --panel-h specifically so it fits without overflowing.
+               Reverting to the long-standing working behaviour rather than
+               keeping a third variant of a property that has now caused two
+               regressions. */
         }
 
         /* ---- photo stack ----
@@ -1483,15 +1533,26 @@
            orchestrate in JS. */
         /* Fixed height in both states so expanding never reflows the bio
            below — the cards are absolutely positioned inside this box, so
-           their arrangement changes without touching document flow. */
+           their arrangement changes without touching document flow.
+
+           --pf-card is the single source of truth for the cluster's scale:
+           capped at 142px, but also bounded by a fraction of the REAL
+           available panel height and of viewport width, so a shorter or
+           narrower phone scales the whole cluster down proportionally
+           instead of pushing the bio and clock off the bottom. Every offset
+           and size below is a fraction of it, so the proportions are
+           identical at any resulting size. */
         #mobile-root #profile-stack {
+            --pf-card: min(142px, calc(var(--panel-h) * 0.26), 40vw);
             position: relative;
             width: 100%;
-            /* Tight to the lowest card (clustered: 46 + 158 = 204; expanded:
-               30 + 172 = 202) so the box isn't padding out dead space above
-               the bio. Fixed in both states — expansion must never reflow. */
-            height: 208px;
-            margin-top: clamp(18px, 5vh, 46px);
+            /* Tight to the lowest card (clustered: 0.288 + 1 = 1.288 cards)
+               so the box isn't padding out dead space above the bio. Fixed in
+               both states — expansion must never reflow. */
+            height: calc(var(--pf-card) * 1.317);
+            /* Scales with the available panel height rather than raw vh, with
+               a floor that keeps the cluster clear of the nav tab above. */
+            margin-top: clamp(12px, calc(var(--panel-h) * 0.042), 34px);
             flex: 0 0 auto;
             cursor: pointer;
             -webkit-tap-highlight-color: transparent;
@@ -1499,9 +1560,9 @@
         #mobile-root .profile-photo {
             position: absolute;
             top: 0; left: 0;
-            width: 158px;
-            height: 158px;
-            border-radius: 22px;
+            width: var(--pf-card);
+            height: var(--pf-card);
+            border-radius: 14%;
             overflow: hidden;
             background: #bdbdbd;
             box-shadow: 0 10px 26px rgba(0, 0, 0, 0.20);
@@ -1516,25 +1577,27 @@
         }
         /* Clustered — back to front, each slightly offset and rotated. The sway
            animation is applied to an inner wrapper so it composes with, rather
-           than overwrites, the positioning transform above. */
-        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(1) { transform: translate(46px, 4px) rotate(7deg); z-index: 1; }
-        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(2) { transform: translate(30px, 22px) rotate(3.5deg); z-index: 2; }
-        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(3) { transform: translate(0, 46px) rotate(0deg); z-index: 3; }
+           than overwrites, the positioning transform above. Offsets are
+           fractions of --pf-card, so the fan keeps its exact proportions at
+           whatever size the card resolves to on this device. */
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(1) { transform: translate(calc(var(--pf-card) * 0.288), calc(var(--pf-card) * 0.028)) rotate(7deg); z-index: 1; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(2) { transform: translate(calc(var(--pf-card) * 0.190), calc(var(--pf-card) * 0.141)) rotate(3.5deg); z-index: 2; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(3) { transform: translate(0, calc(var(--pf-card) * 0.288)) rotate(0deg); z-index: 3; }
         /* Expanded — flat row, no sway (movement stops once they settle). */
-        #mobile-root #profile-stack.is-expanded { height: 208px; }
+        #mobile-root #profile-stack.is-expanded { height: calc(var(--pf-card) * 1.317); }
         #mobile-root #profile-stack.is-expanded .profile-photo {
             width: 31.5%;
-            height: 172px;
-            border-radius: 20px;
+            height: calc(var(--pf-card) * 1.09);
+            border-radius: 13%;
         }
         /* Expansion order: the two REAR cards open outward first and define
            the final row; the front portrait settles into place last. The
            delays are on the children themselves rather than orchestrated in
            JS, so the sequence is carried entirely by the same transition
            that already animates the arrangement. */
-        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(1) { transform: translate(212%, 30px) rotate(0deg); transition-delay: 0s; }
-        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(2) { transform: translate(106%, 30px) rotate(0deg); transition-delay: 0.04s; }
-        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(3) { transform: translate(0, 30px) rotate(0deg); transition-delay: 0.16s; }
+        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(1) { transform: translate(212%, calc(var(--pf-card) * 0.19)) rotate(0deg); transition-delay: 0s; }
+        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(2) { transform: translate(106%, calc(var(--pf-card) * 0.19)) rotate(0deg); transition-delay: 0.04s; }
+        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(3) { transform: translate(0, calc(var(--pf-card) * 0.19)) rotate(0deg); transition-delay: 0.16s; }
         /* Collapsing reverses it — the portrait moves back over them first. */
         #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(3) { transition-delay: 0s; }
         #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(2) { transition-delay: 0.08s; }
@@ -1572,10 +1635,14 @@
 
         /* ---- bio ---- */
         #mobile-root #profile-bio {
-            margin: clamp(18px, 3.6vh, 32px) 0 0;
-            font-size: 0.95rem;
+            /* Gap and type both track the real available panel height, so the
+               bio tightens on a short device instead of overflowing it —
+               bounded at both ends so it never collapses or grows out of
+               proportion with the cluster above. */
+            margin: clamp(14px, calc(var(--panel-h) * 0.05), 29px) 0 0;
+            font-size: clamp(0.79rem, calc(var(--panel-h) * 0.032), 0.88rem);
             font-weight: 500;
-            line-height: 1.62;
+            line-height: 1.52;
             color: var(--ink);
             white-space: pre-line;
         }
@@ -1636,9 +1703,9 @@
         /* ---- project name ---- */
         #mobile-root #project-name {
             margin-top: 0;
-            margin-bottom: clamp(4px, 1vh, 10px);
+            margin-bottom: clamp(4px, calc(var(--panel-h) * 0.016), 10px);
             flex: 0 0 auto;
-            font-size: 1.28rem;
+            font-size: clamp(1.05rem, calc(var(--panel-h) * 0.046), 1.28rem);
             font-weight: 600;
             letter-spacing: 0.1px;
             color: var(--on-glass);
@@ -1670,6 +1737,56 @@
         #mobile-root #carousel.ready { opacity: 1; }
         #mobile-root #carousel::-webkit-scrollbar { display: none; }
         #mobile-root #carousel.tweening { scroll-snap-type: none; }
+
+        /* The carousel is a LIVE SCROLL CONTAINER ONLY WHILE ITS PANEL IS THE
+           ACTIVE SECTION.
+
+           Root cause of the initial-load freeze this fixes: #projects-panel
+           is hidden with `visibility: hidden` (deliberately — see the note
+           above the panel rules; display:none would make slideW unmeasurable).
+           But visibility:hidden does not stop #carousel from being a real
+           overflow-x:auto scroller. The page boots on Profile, so on a fresh
+           load the carousel is created, laid out AND scrolled
+           (Carousel.start() writes scrollLeft) entirely inside a hidden
+           subtree. WebKit builds its accelerated scrolling layer in that
+           state, and that layer comes up broken: it covers the full panel
+           rect — the exact same rect #profile-panel occupies, and it paints
+           above it as the later absolutely-positioned sibling — so it
+           swallows touches aimed at the Profile cluster underneath, while
+           itself never handling a pan.
+
+           That explains every observed symptom precisely:
+             - the FIRST tap on the cluster lands (the layer has not been
+               materialised yet); that tap starts the cluster's
+               will-change:transform transitions, which forces the compositing
+               update that materialises it — from then on every touch inside
+               the panel rect is eaten;
+             - the project changer keeps working because #tabslot sits ABOVE
+               --panel-top, outside that rect;
+             - switching to the projects section shows a carousel whose only
+               scrolling layer is the broken one, so it renders but never
+               pans;
+             - a Gallery round-trip fixes it because #home loses and regains
+               `.active` (opacity 1 -> 0 -> 1), which makes WebKit discard and
+               rebuild the whole #home layer tree, replacing the bad layer
+               with a correctly-built one.
+
+           The fix is structural rather than a nudge: while the section is not
+           `projects` the element is simply not a scroller, so no scrolling
+           layer can ever be built from a hidden subtree. It becomes one at
+           the moment its panel becomes visible, which is the state WebKit
+           builds it correctly from. Layout is untouched — .slide is
+           flex: 0 0 100%, so slideW measures identically either way and
+           everything that depends on it stays valid.
+
+           scrollLeft cannot be retained by a non-scrolling box, so
+           Carousel.enterSection() re-applies the active card's offset on the
+           way in; onScroll ignores events fired outside the projects section
+           so the browser's reset-to-0 is never read as a real swipe. */
+        #mobile-root #home:not([data-section="projects"]) #carousel {
+            overflow: hidden;
+            -webkit-overflow-scrolling: auto;
+        }
 
         /* Full-width slides: only the active image is ever visible, sized to
            whatever container #carousel actually is — 100% of the viewport in
@@ -1711,8 +1828,11 @@
         #mobile-root #meta {
             flex: 0 0 auto;
             width: 100%;
-            height: clamp(126px, 20vh, 148px);
-            padding: clamp(12px, 2.2vh, 18px) var(--edge) 0;
+            /* Sized against the real available panel height, so the
+               description block keeps its share of a short screen instead of
+               being squeezed out by a fixed pixel figure. */
+            height: clamp(112px, calc(var(--panel-h) * 0.30), 148px);
+            padding: clamp(10px, calc(var(--panel-h) * 0.028), 18px) var(--edge) 0;
             overflow: hidden;
             text-align: center;
             opacity: 0;
@@ -1802,7 +1922,12 @@
         #mobile-root .gallery-card {
             position: absolute;
             top: 50%; left: 50%;
-            width: min(78vw, 420px);
+            /* Bounded by height as well as width: the card is 16:9 plus a
+               control cluster underneath, so on a short landscape viewport a
+               width-only cap would make a tile taller than the screen. The
+               height term keeps the whole tile + controls inside the visible
+               frame on any device shape. */
+            width: min(78vw, 420px, calc(var(--app-mh) * 1.15));
             display: none;
             opacity: 0;
             transform-style: preserve-3d;
@@ -2004,42 +2129,60 @@
            of orientation rather than being retuned per shape.
            ========================================================================== */
         #mobile-root[data-orient="landscape"] {
-            --tabbar-h: 40px;
-            --tab-gap-top: 8px;
-            --tab-gap-bottom: 10px;
+            /* Same viewport-derived approach as portrait, retuned for the
+               wide-short shape: landscape height is the scarce dimension, so
+               the bar and its gaps take a smaller share of it and bottom out
+               lower before anything is allowed to overflow. */
+            --tabbar-h: clamp(34px, calc(var(--app-mh) * 0.115), 44px);
+            --tab-gap-top: clamp(4px, calc(var(--app-mh) * 0.022), 10px);
+            --tab-gap-bottom: clamp(4px, calc(var(--app-mh) * 0.026), 12px);
         }
-        #mobile-root[data-orient="landscape"] #home {
+        /* HOME (landscape) — the two-column composition lives on
+           #projects-panel, NOT on #home.
+
+           REGRESSION FIXED HERE: this grid used to be declared on #home with
+           grid-areas assigned to #carousel/#project-name/#meta. That worked
+           when those three were direct children of #home — but they were
+           later wrapped in #projects-panel (so the profile/projects sections
+           could cross-fade as absolutely-positioned siblings). grid-area only
+           applies to a direct child of the grid container, so from that point
+           on every one of those assignments was inert, and #home's grid had
+           no items at all because both panels are position:absolute. The
+           layout silently fell back to the portrait column. Declaring the
+           grid on the element that actually parents them restores it. */
+        #mobile-root[data-orient="landscape"] #projects-panel {
             display: grid;
             grid-template-columns: 58% 42%;
-            grid-template-rows: auto 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
             grid-template-areas:
-                "tabs tabs"
                 "car  name"
                 "car  meta";
             align-items: stretch;
-            padding-top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 6px);
-            padding-bottom: 10px;
+            padding-bottom: 6px;
         }
         #mobile-root[data-orient="landscape"] #tabslot {
-            grid-area: tabs;
-            height: 40px;
-            margin-top: 8px;
+            height: var(--tabbar-h);
+            margin-top: var(--tab-gap-top);
         }
         #mobile-root[data-orient="landscape"] #carousel {
             grid-area: car;
             min-height: 0;
+            min-width: 0;
         }
         #mobile-root[data-orient="landscape"] #project-name {
             grid-area: name;
             align-self: end;
             text-align: left;
             margin-top: 0;
+            margin-bottom: 0;
+            min-width: 0;
             padding: 0 18px;
         }
         #mobile-root[data-orient="landscape"] #meta {
             grid-area: meta;
             align-self: start;
             height: auto;
+            min-width: 0;
             text-align: left;
             padding: 8px 18px 0;
         }
@@ -2060,23 +2203,47 @@
             padding: 0 clamp(16px, 4vw, 28px);
         }
         #mobile-root[data-orient="landscape"] #profile-stack {
-            --pl-card: clamp(80px, 11vh, 106px);
-            --pl-gap: 12px;
+            /* The expanded state is a 3-card vertical column, so its full
+               height is 3 cards + 2 gaps. Deriving the card size FROM the
+               available panel height (rather than capping it at a guessed
+               px/vh figure) is what guarantees the whole column stays inside
+               the viewport on any landscape phone — the min() takes whichever
+               is smaller: the aesthetic cap, or the largest card that still
+               lets 3 of them plus gaps fit the space that actually exists. */
+            --pl-gap: clamp(6px, calc(var(--panel-h) * 0.03), 12px);
+            --pl-card: min(
+                106px,
+                calc((var(--panel-h) - (var(--pl-gap) * 2) - 8px) / 3),
+                26vw
+            );
             flex: 0 0 auto;
             width: var(--pl-card);
-            height: clamp(200px, 60vh, 280px);
+            /* Exactly the expanded column's height, so the box never claims
+               more room than the content needs or less than it occupies. */
+            height: calc(var(--pl-card) * 3 + var(--pl-gap) * 2);
             margin-top: 0;
         }
         #mobile-root[data-orient="landscape"] #profile-stack .profile-photo {
             width: var(--pl-card);
             height: var(--pl-card);
-            border-radius: 18px;
+            border-radius: 16%;
         }
-        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(1) { transform: translate(0, 6px) rotate(7deg); }
-        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(2) { transform: translate(0, 16px) rotate(3.5deg); }
-        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(3) { transform: translate(0, 30px) rotate(0deg); }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(1) { transform: translate(0, calc(var(--pl-card) * 0.06)) rotate(7deg); }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(2) { transform: translate(0, calc(var(--pl-card) * 0.16)) rotate(3.5deg); }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(3) { transform: translate(0, calc(var(--pl-card) * 0.30)) rotate(0deg); }
         /* Vertical column on expand — same rear-cards-first ordering as
-           portrait/desktop, just along Y instead of X. */
+           portrait/desktop, just along Y instead of X. The width/height and
+           stack height are re-stated explicitly for the expanded state so
+           they beat the portrait `.is-expanded` rules on specificity rather
+           than relying on source order. */
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded {
+            height: calc(var(--pl-card) * 3 + var(--pl-gap) * 2);
+        }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo {
+            width: var(--pl-card);
+            height: var(--pl-card);
+            border-radius: 16%;
+        }
         #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo:nth-child(1) { transform: translate(0, calc((var(--pl-card) + var(--pl-gap)) * 2)) rotate(0deg); transition-delay: 0s; }
         #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo:nth-child(2) { transform: translate(0, calc(var(--pl-card) + var(--pl-gap))) rotate(0deg); transition-delay: 0.04s; }
         #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo:nth-child(3) { transform: translate(0, 0) rotate(0deg); transition-delay: 0.16s; }
@@ -2084,21 +2251,21 @@
             margin-top: 0;
             flex: 1 1 auto;
             min-width: 0;
-            font-size: clamp(12.5px, 1.7vh, 14.5px);
+            font-size: clamp(12.5px, calc(var(--app-mh) * 0.038), 14.5px);
             line-height: 1.5;
         }
         #mobile-root[data-orient="landscape"] #profile-clock {
-            bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(6px, 1.6vh, 12px));
+            bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(6px, calc(var(--app-mh) * 0.036), 12px));
             font-size: 0.78rem;
         }
 
-        /* GALLERY (landscape): "Welcome to My Vault" sat right on top of the
-           first video tile in a short landscape viewport. Pulled up closer to
-           the header (small clamped gap instead of a fixed 22px) and shrunk
-           proportionally so it clears the tile below with real separation. */
+        /* GALLERY (landscape): the welcome heading is hidden outright. There
+           simply isn't the vertical room for it beside the first video tile
+           in a wide-short viewport, and any position that clears the tile
+           puts it under the header. display:none rather than opacity, so it
+           can't intercept anything or occupy layout either. */
         #mobile-root[data-orient="landscape"] #gallery-welcome {
-            top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + clamp(2px, 1vh, 8px));
-            font-size: clamp(0.7rem, 2.4vh, 0.9rem);
+            display: none;
         }
 
         /* ==========================================================================
@@ -2502,20 +2669,22 @@ function initDesktopHomepage() {
        anchor word, in its own space, rather than centred above/below it —
        centring made both the link preview and the copy confirmation overlap
        the surrounding bio text. Falls back to the left of the word if there
-       isn't room on the right, vertically centred on the word's own line,
-       clamped so a link near the viewport edge can't push the card off-screen.
-       Measured after a frame because width isn't known until the content is in. */
-    function placeOver(target, anchor) {
+       isn't room on the right, clamped so a link near the viewport edge
+       can't push the card off-screen. `gap` widens the horizontal offset;
+       `lift` (positive = upward) nudges the vertical centring — both let the
+       preview and the copied bubble sit slightly differently so neither one
+       overlaps a word or crowds the other. Measured after a frame because
+       width isn't known until the content is in. */
+    function placeOver(target, anchor, gap = 14, lift = 0) {
         const r = anchor.getBoundingClientRect();
         target.style.visibility = 'hidden';
         target.classList.add('visible');
         requestAnimationFrame(() => {
             const pw = target.offsetWidth, ph = target.offsetHeight;
-            const gap = 14;
             let left = r.right + gap;
             if (left + pw > window.innerWidth - 16) left = r.left - pw - gap;
             left = Math.max(16, Math.min(left, window.innerWidth - pw - 16));
-            let top = r.top + r.height / 2 - ph / 2;
+            let top = r.top + r.height / 2 - ph / 2 - lift;
             top = Math.max(16, Math.min(top, window.innerHeight - ph - 16));
             target.style.left = left + 'px';
             target.style.top = top + 'px';
@@ -2529,7 +2698,9 @@ function initDesktopHomepage() {
         pvIcon.innerHTML = PREVIEW_ICONS[key] || '';
         pvName.textContent = cfg.name;
         pvUrl.textContent = prettyUrl(cfg.url);
-        placeOver(preview, anchor);
+        /* Further right and slightly higher than the copied bubble, so it
+           sits clearly clear of the word rather than centred on its line. */
+        placeOver(preview, anchor, 20, 8);
     }
     function hidePreview() {
         clearTimeout(pvTimer);
@@ -2541,7 +2712,7 @@ function initDesktopHomepage() {
         /* The hover preview and the confirmation would otherwise stack on
            the same spot — the confirmation is the more important message. */
         hidePreview();
-        placeOver(copied, anchor);
+        placeOver(copied, anchor, 20);
         clearTimeout(copiedTimer);
         copiedTimer = setTimeout(() => copied.classList.remove('visible'), 1500);
     }
@@ -2883,6 +3054,38 @@ function initMobile() {
     function currentOrient() { return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'; }
     root.dataset.orient = currentOrient();
 
+    /* ==========================================================================
+       VIEWPORT UNITS (mobile)
+       --------------------------------------------------------------------------
+       CORE RESPONSIVE RULE for the whole mobile experience: never size
+       important content off raw `vh`. On mobile browsers `100vh` is the
+       viewport WITHOUT the URL bar — it stays constant while the visible
+       area shrinks — so anything sized in vh overflows the real screen on
+       exactly the devices with the least room to spare. --mvh/--mvw are
+       written here from the ACTUAL visible viewport (visualViewport when
+       available, which is the only value that tracks the collapsing URL bar)
+       and re-written on every resize/orientation change.
+
+       Everything below that must fit the screen is expressed against
+       --app-mh (the real visible height) and --panel-h (what's actually left
+       for panel content after the header, tab bar and safe areas), rather
+       than a fixed pixel guess that only holds on one device size. This is
+       the same principle the desktop Viewport module applies to the WebGL
+       canvases, applied here to CSS layout.
+       ========================================================================== */
+    function writeViewportUnits() {
+        const vv = window.visualViewport;
+        const w = Math.round(vv ? vv.width : window.innerWidth);
+        const h = Math.round(vv ? vv.height : window.innerHeight);
+        /* Written to :root, NOT to #mobile-root. --app-mh/--panel-h are
+           declared in the :root block, and a custom property is substituted
+           using the value in scope at the element where it's DECLARED — so
+           overriding --mvh further down the tree would never reach them. */
+        document.documentElement.style.setProperty('--mvh', (h / 100) + 'px');
+        document.documentElement.style.setProperty('--mvw', (w / 100) + 'px');
+    }
+    writeViewportUnits();
+
     let currentPage = 'home';
 
     function moveThumb(instant) {
@@ -2965,10 +3168,12 @@ function initMobile() {
        COPY CONFIRMATION BUBBLE
        --------------------------------------------------------------------------
        Shared by the Profile bio's Naivaa/A Thousand Islands links. Centred
-       above the tapped word (falling back below if there's no room), clamped
-       to the viewport — mobile's bio column is narrow enough that a
-       to-the-right placement (as used on desktop) would routinely run off
-       screen, so this stays with the simpler above/below placement.
+       above the tapped word (falling back below if there's no room) and
+       nudged slightly right of centre so it has its own space rather than
+       sitting exactly over the word, clamped to the viewport — mobile's bio
+       column is narrow enough that a fully to-the-right placement (as used
+       on desktop) would routinely run off screen, so this keeps the simpler
+       above/below placement with just the small rightward nudge.
        ========================================================================== */
     const mCopiedEl = document.getElementById('m-copied');
     let mCopiedTimer = null;
@@ -2978,7 +3183,7 @@ function initMobile() {
         mCopiedEl.classList.add('visible');
         requestAnimationFrame(() => {
             const pw = mCopiedEl.offsetWidth, ph = mCopiedEl.offsetHeight;
-            let left = r.left + r.width / 2 - pw / 2;
+            let left = r.left + r.width / 2 - pw / 2 + 10;
             left = Math.max(12, Math.min(left, window.innerWidth - pw - 12));
             let top = r.top - ph - 10;
             if (top < 12) top = r.bottom + 10;
@@ -3128,7 +3333,7 @@ function initMobile() {
                keep real layout boxes in both states, but re-running layout
                here guarantees slideW reflects the current viewport before
                any jump is computed against it. */
-            if (section === 'projects') Carousel.layout();
+            if (section === 'projects') Carousel.enterSection();
             /* Always return to the clustered state when leaving, so coming
                back to Profile is a consistent starting point. */
             if (section !== 'profile') {
@@ -3279,6 +3484,10 @@ function initMobile() {
         const collectionEl = document.getElementById('collection');
         const descEl = document.getElementById('description');
         const dotsEl = document.getElementById('position-dots');
+        /* Needed to tell whether this carousel's own panel is the live
+           section — it is only a scroll container in that state (see the
+           #carousel overflow rule in the CSS). */
+        const homeEl = document.getElementById('home');
 
         const slides = [], frames = [], imgs = [];
         const natural = [];   // cached {w,h} per card, filled once its image loads
@@ -3353,6 +3562,12 @@ function initMobile() {
         function tick() { paint(); return scrolling; }
 
         function onScroll() {
+            /* The element stops being a scroll container whenever the
+               projects section isn't the active one, and the browser resets
+               scrollLeft to 0 when that happens. That synthetic event must
+               not be read as the user having swiped back to the first card —
+               it would silently rewrite `active`, the tab and the meta block. */
+            if (homeEl.dataset.section !== 'projects') return;
             if (!scrolling) { scrolling = true; Ticker.add(tick); }
             clearTimeout(idleTimer);
             idleTimer = setTimeout(() => { scrolling = false; paint(); }, 140);
@@ -3484,7 +3699,22 @@ function initMobile() {
             paint();
         }
 
-        return { start, layout, jumpTo, jumpToProject, reveal };
+        /* Called the moment the projects section becomes the active one.
+           layout() re-measures (and, because getBoundingClientRect flushes
+           style + layout, guarantees the element has already been promoted
+           back to a real scroll container by the CSS rule before the line
+           below runs). scrollLeft can't survive a period of not being a
+           scroller, so the active card's offset is re-applied here — writing
+           it synchronously means jumpTo(), which may run immediately after
+           this on the same tab tap, reads the correct starting position. */
+        function enterSection() {
+            layout();
+            const i = active < 0 ? START_INDEX : active;
+            el.scrollLeft = i * slideW;
+            paint();
+        }
+
+        return { start, layout, enterSection, jumpTo, jumpToProject, reveal };
     })();
 
     /* ==========================================================================
@@ -3654,7 +3884,7 @@ function initMobile() {
             wrapper.appendChild(inner);
             viewportEl.appendChild(wrapper);
 
-            const rec = { i, wrapper, inner, video, cover, playBtn, display: null, transform: null };
+            const rec = { i, wrapper, inner, casing, video, cover, playBtn, display: null, transform: null };
 
             wrapper.addEventListener('click', () => {
                 /* No drag-vs-tap disambiguation needed here — this is a plain
@@ -3691,6 +3921,12 @@ function initMobile() {
         let welcomeTimeout;
         function startWelcomeTypewriter() {
             clearTimeout(welcomeTimeout);
+            /* Hidden entirely in landscape (see the LANDSCAPE CSS) — skip the
+               work rather than typing into an invisible element on a timer. */
+            if (root.dataset.orient === 'landscape') {
+                welcomeEl.textContent = '';
+                return;
+            }
             welcomeEl.textContent = '';
             welcomeEl.classList.remove('done');
             welcomeEl.style.opacity = '1';
@@ -3787,6 +4023,14 @@ function initMobile() {
             spacerEl.style.height = Math.round(vh * totalP) + 'px';
         }
 
+        /* The welcome heading is hidden outright in landscape now (see the
+           LANDSCAPE CSS), so there is no position to compute there. This just
+           clears any inline top left over from a previous orientation so the
+           portrait CSS rule takes back control cleanly on rotation. */
+        function positionWelcomeForOrientation() {
+            welcomeEl.style.top = '';
+        }
+
         /* ---- public API ---- */
         function enter() {
             running = true;
@@ -3798,6 +4042,7 @@ function initMobile() {
             resizeSpacer();
             positionCards();   // synchronous first pass so card 0 is correctly
                                 // placed before anything paints
+            positionWelcomeForOrientation();
             requestAnimationFrame(frame);
 
             /* First video fades in with a slight scale-up at the same moment
@@ -3839,6 +4084,7 @@ function initMobile() {
         function layout() {
             resizeSpacer();
             positionCards();
+            positionWelcomeForOrientation();
         }
 
         document.addEventListener('visibilitychange', () => {
@@ -3851,23 +4097,52 @@ function initMobile() {
 
     /* ==========================================================================
        LAYOUT / RESIZE
+       --------------------------------------------------------------------------
+       Trailing settle timer, same pattern the desktop Viewport module already
+       uses for OS-animated transitions: an orientation change can fire
+       resize/orientationchange/visualViewport-resize several times in quick
+       succession as the browser's viewport metrics settle, and the rAF-
+       coalesced pass below only ever measures whichever one happens to be
+       current when it fires — if that's a still-transitional frame, the
+       resulting slideW/layout gets locked in wrong until the next resize.
+       relayout(true), fired 220ms after the LAST event of the burst rather
+       than the first, is an unconditional final pass that guarantees
+       everything converges on the real settled dimensions regardless of how
+       many intermediate events fired or in what order.
        ========================================================================== */
-    let lastW = window.innerWidth, lastH = window.innerHeight, resizeRAF = 0;
+    let lastW = window.innerWidth, lastH = window.innerHeight, resizeRAF = 0, settleTimer = null;
+
+    function relayout(force) {
+        const w = window.innerWidth, h = window.innerHeight;
+        const meaningful = force || (w !== lastW) || Math.abs(h - lastH) > 130;
+        lastW = w; lastH = h;
+        if (!meaningful) return;
+        const orient = currentOrient();
+        if (root.dataset.orient !== orient) root.dataset.orient = orient;
+        Carousel.layout(); Gallery.layout(); Tab.layout(); moveThumb(true);
+    }
+
     function onResize() {
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => { writeViewportUnits(); relayout(true); }, 220);
+
         if (resizeRAF) return;
         resizeRAF = requestAnimationFrame(() => {
             resizeRAF = 0;
-            const w = window.innerWidth, h = window.innerHeight;
-            const meaningful = (w !== lastW) || Math.abs(h - lastH) > 130;
-            lastW = w; lastH = h;
-            if (!meaningful) return;
-            const orient = currentOrient();
-            if (root.dataset.orient !== orient) root.dataset.orient = orient;
-            Carousel.layout(); Gallery.layout(); Tab.layout(); moveThumb(true);
+            /* --mvh/--mvw are refreshed on EVERY resize, including the small
+               URL-bar-only height changes the `meaningful` gate deliberately
+               ignores — those still change the real visible area, so CSS
+               that must fit the screen has to track them. Only the expensive
+               relayout work is gated. */
+            writeViewportUnits();
+            relayout(false);
         });
     }
     window.addEventListener('resize', onResize, { passive: true });
     window.addEventListener('orientationchange', onResize, { passive: true });
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', onResize, { passive: true });
+    }
 
     /* ==========================================================================
        BOOT
@@ -3882,6 +4157,26 @@ function initMobile() {
 
         setTimeout(() => {
             Carousel.start();
+            /* Apply the SAME arrival state navigation applies. This was the
+               one real lifecycle asymmetry between initial load and
+               Gallery->Home: `arrive` is added in exactly one place, inside
+               goto(), so on a fresh load #home never received it. The
+               homeRise keyframes it drives are transform-based with
+               fill-mode:both, which leaves #carousel with a retained
+               transform — that establishes a stacking context on the scroll
+               container and gets it promoted to its own compositing layer.
+               After a Gallery round-trip the carousel therefore had that
+               layer and behaved correctly; on first load it did not, which
+               is why the identical element became responsive only after
+               navigating away and back.
+
+               Applying it here makes both paths converge on one state
+               instead of two. It is not a delay, a duplicate listener, or a
+               reinitialisation — it is the same single class the navigation
+               path already sets, applied at the equivalent moment. */
+            pages.home.classList.remove('arrive');
+            void pages.home.offsetWidth;
+            pages.home.classList.add('arrive');
         }, 220);
 
         setTimeout(() => {
@@ -8501,34 +8796,36 @@ async function initDesktop(Homepage) {
         if (e.relatedTarget === null) handlePointerLeave();
     });
 
-    /* ---- contact menu ---- */
-    const contactItems = document.querySelectorAll('.contact-item');
+    /* ---- contact menu ----
+       Same hover-to-expand interaction as the Profile page's Contact button
+       (#hp-contact-btn) — mouseenter/mouseleave open/close it (click still
+       works too, for touch/keyboard), for consistency between the Profile
+       and Vault experiences. */
+    const contactOpen = () => contactBtn.classList.add('is-open');
+    const contactClose = () => contactBtn.classList.remove('is-open');
 
+    contactBtn.addEventListener('mouseenter', contactOpen);
+    contactBtn.addEventListener('mouseleave', contactClose);
     contactBtn.addEventListener('click', (e) => {
-        if (!contactBtn.classList.contains('is-open')) {
-            contactBtn.classList.add('is-open');
-            e.stopPropagation();
-        }
+        e.stopPropagation();
+        contactBtn.classList.toggle('is-open');
     });
     contactBtn.addEventListener('keydown', (e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && !contactBtn.classList.contains('is-open')) {
-            e.preventDefault();
-            contactBtn.classList.add('is-open');
-        }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); contactBtn.classList.toggle('is-open'); }
+        if (e.key === 'Escape') contactClose();
     });
-    document.addEventListener('click', (e) => {
-        if (contactBtn.classList.contains('is-open') && !contactBtn.contains(e.target)) {
-            contactBtn.classList.remove('is-open');
-        }
-    });
-    contactItems.forEach(item => {
+    document.addEventListener('click', contactClose);
+
+    contactBtn.querySelectorAll('.contact-item').forEach(item => {
         item.addEventListener('click', (e) => {
             e.stopPropagation();
             const text = item.getAttribute('data-copy');
-            navigator.clipboard.writeText(text).then(() => {
+            const done = () => {
                 item.classList.add('is-copied');
-                setTimeout(() => item.classList.remove('is-copied'), 1200);
-            }).catch(err => console.error('Copy failed:', err));
+                setTimeout(() => item.classList.remove('is-copied'), 1500);
+            };
+            if (navigator.clipboard) navigator.clipboard.writeText(text).then(done).catch(done);
+            else done();
         });
     });
 
