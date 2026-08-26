@@ -1910,6 +1910,44 @@
         #mobile-root #gallery-scroll::-webkit-scrollbar { display: none; }
         #mobile-root #gallery-scroll-spacer { width: 1px; } /* height set in JS */
 
+        /* #gallery-scroll is only a LIVE native scroll surface while Gallery
+           is the active page. This is the actual cause of the initial-load
+           freeze (cluster stops responding after one tap, carousel never
+           swipes, tab bar unaffected):
+
+           #gallery is a `.page`, `position:absolute; inset:0` — the SAME
+           rect as #home — and it exists in the DOM from first paint, long
+           before anyone taps "Gallery". `resizeSpacer()`, the only thing
+           that ever gives #gallery-scroll-spacer real height, is only called
+           from Gallery.enter()/layout() — so at boot #gallery-scroll has
+           essentially no scrollable content. It is still declared
+           `-webkit-overflow-scrolling: touch`, and that legacy property
+           forces WebKit to promote a native UIScrollView-backed layer
+           regardless of whether there is anything to scroll. A content-less
+           scroll view built this early still participates in native touch
+           gesture recognition for the screen region it covers — which is
+           the whole of #home, both panels — and can swallow a pan or cancel
+           a tap before the DOM's own `pointer-events:none` on the inactive
+           `.page` is ever consulted, since that interception happens at the
+           native gesture layer, beneath CSS hit-testing.
+
+           That is why this one element explains every symptom: it covers
+           both #profile-panel and #projects-panel (cluster AND carousel
+           break), while #tabslot sits above --panel-top outside that rect
+           (project changer keeps working). Visiting Gallery once calls
+           Gallery.enter() -> resizeSpacer(), which gives it real, correctly
+           scoped content for the first time and lets WebKit reconcile the
+           layer properly — which is why the round-trip "fixes" it.
+
+           Scoping overflow to the active page removes the ghost scroll view
+           from ever being built while it isn't wanted. Gallery.enter()
+           already resets scrollTop to 0 itself, so nothing here needs to
+           restore a position on the way back in. */
+        #mobile-root:not([data-page="gallery"]) #gallery-scroll {
+            overflow: hidden;
+            -webkit-overflow-scrolling: auto;
+        }
+
         #mobile-root #gallery-viewport {
             position: sticky;
             top: 0;
