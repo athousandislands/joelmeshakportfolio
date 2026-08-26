@@ -424,7 +424,223 @@
 
         #home-btn { opacity: 0; pointer-events: none; }
 
-        #contact-btn {
+        /* ==========================================================================
+           DESKTOP HOMEPAGE
+           --------------------------------------------------------------------------
+           An overlay above scene-one. Fades out on entry and is then fully
+           removed from the hit-testing path, so it can't interfere with the
+           particle system or any Vault interaction afterwards.
+           ========================================================================== */
+        #homepage {
+            position: fixed;
+            inset: 0;
+            z-index: 400;
+            background: #CCCCCC;
+            opacity: 1;
+            transition: opacity 0.85s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #homepage.leaving { opacity: 0; }
+        #homepage.gone { display: none; }
+
+        /* Profile's own corner buttons scale with the viewport (vw/vh clamped)
+           instead of the Vault's fixed 32px — this, plus every other unit in
+           this section being vw/vh/percentage-based rather than fixed pixels,
+           is what makes the whole Profile composition hold its proportions
+           through a browser resize. Native vw/vh already recompute live on
+           resize with no JS involved (unlike the Vault's WebGL canvas, which
+           needs the Viewport module to resize an actual drawing buffer) —
+           a plain DOM page like this one doesn't need that machinery. */
+        #hp-name-btn {
+            position: fixed;
+            top: clamp(20px, 3.5vh, 34px);
+            left: clamp(16px, 2.8vw, 30px);
+        }
+        #hp-contact-btn {
+            position: fixed;
+            top: clamp(20px, 3.5vh, 34px);
+            right: clamp(16px, 2.8vw, 30px);
+            left: auto;
+        }
+
+        /* The cluster and the bio share a left edge — that alignment is the
+           spine of the reference layout, so both live in one block rather than
+           being positioned independently. Sits left-of-centre and starts near
+           the top of the viewport rather than vertically centred, matching
+           the reference composition's heavy negative space on the right. */
+        #hp-inner {
+            position: absolute;
+            top: 17vh;
+            left: 18vw;
+            width: min(460px, 34vw);
+        }
+
+        /* Fixed height in both states so expanding never reflows the bio —
+           the cards are absolutely positioned inside this box. Card size and
+           gap are viewport-scaled (clamped) rather than fixed pixels, and the
+           fan offsets below are expressed as a fraction of --hp-card, so the
+           whole cluster scales as one unit at any window size instead of the
+           fan spacing drifting out of proportion. */
+        #hp-stack {
+            --hp-card: clamp(150px, 12vw, 190px);
+            --hp-gap: clamp(10px, 1vw, 16px);
+            position: relative;
+            width: 100%;
+            height: calc(var(--hp-card) * 1.248 + 20px);
+            margin-bottom: clamp(28px, 3.5vh, 44px);
+        }
+        .hp-photo {
+            position: absolute;
+            top: 0; left: 0;
+            width: var(--hp-card);
+            height: var(--hp-card);
+            border-radius: 14%;
+            overflow: hidden;
+            background: #bdbdbd;
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.2);
+            transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                        width 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                        height 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+            will-change: transform;
+        }
+        .hp-photo img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+        /* Overfilled so the sway can never expose the card's own background at
+           the edges — the inner is what animates, and it's inside overflow:hidden. */
+        .hp-photo-inner { width: 116%; height: 116%; margin: -8% 0 0 -8%; }
+
+        #hp-stack.is-clustered .hp-photo:nth-child(1) { transform: translate(calc(var(--hp-card) * 0.288), calc(var(--hp-card) * 0.016)) rotate(11deg); z-index: 1; }
+        #hp-stack.is-clustered .hp-photo:nth-child(2) { transform: translate(calc(var(--hp-card) * 0.184), calc(var(--hp-card) * 0.12)) rotate(5.5deg); z-index: 2; }
+        #hp-stack.is-clustered .hp-photo:nth-child(3) { transform: translate(0, calc(var(--hp-card) * 0.248)) rotate(0deg); z-index: 3; }
+
+        #hp-stack.is-expanded .hp-photo { width: var(--hp-card); height: calc(var(--hp-card) * 1.048); }
+        /* Rear cards open outward first and define the row; the front
+           portrait settles last. Same ordering as mobile. */
+        #hp-stack.is-expanded .hp-photo:nth-child(1) { transform: translate(calc((var(--hp-card) + var(--hp-gap)) * 2), calc(var(--hp-card) * 0.16)) rotate(0deg); transition-delay: 0s; }
+        #hp-stack.is-expanded .hp-photo:nth-child(2) { transform: translate(calc(var(--hp-card) + var(--hp-gap)), calc(var(--hp-card) * 0.16)) rotate(0deg); transition-delay: 0.04s; }
+        #hp-stack.is-expanded .hp-photo:nth-child(3) { transform: translate(0, calc(var(--hp-card) * 0.16)) rotate(0deg); transition-delay: 0.16s; }
+        #hp-stack.is-clustered .hp-photo:nth-child(3) { transition-delay: 0s; }
+        #hp-stack.is-clustered .hp-photo:nth-child(2) { transition-delay: 0.08s; }
+        #hp-stack.is-clustered .hp-photo:nth-child(1) { transition-delay: 0.14s; }
+
+        /* Organic sway while clustered, on an inner wrapper so it composes
+           with the positioning transform instead of overwriting it. Stops in
+           the expanded state — the photos settle once they're in a row. Three
+           stops rather than two so the return leg doesn't retrace the outbound
+           one, which is what stops a loop this short reading as mechanical. */
+        #hp-stack.is-clustered .hp-photo:nth-child(1) .hp-photo-inner { animation: hpSwayA 6.4s ease-in-out infinite; }
+        #hp-stack.is-clustered .hp-photo:nth-child(2) .hp-photo-inner { animation: hpSwayB 8.1s ease-in-out -2.7s infinite; }
+        #hp-stack.is-clustered .hp-photo:nth-child(3) .hp-photo-inner { animation: hpSwayC 5.6s ease-in-out -3.9s infinite; }
+        @keyframes hpSwayA {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            34%      { transform: translate(-7px, -10px) rotate(-2deg); }
+            67%      { transform: translate(4px, -4px) rotate(0.8deg); }
+        }
+        @keyframes hpSwayB {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            40%      { transform: translate(9px, -7px) rotate(1.8deg); }
+            72%      { transform: translate(-3px, 4px) rotate(-0.9deg); }
+        }
+        @keyframes hpSwayC {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            45%      { transform: translate(-6px, 8px) rotate(-1.6deg); }
+            78%      { transform: translate(5px, 2px) rotate(1deg); }
+        }
+
+        #hp-bio {
+            margin: 0;
+            font-size: clamp(15px, 1.15vw, 18px);
+            font-weight: 500;
+            line-height: 1.48;
+            letter-spacing: -0.005em;
+            color: #3f3f3f;
+            white-space: pre-line;
+        }
+        .hp-link {
+            color: #ffffff;
+            cursor: pointer;
+            transition: color 0.25s ease;
+        }
+        .hp-link:hover { color: #3f3f3f; }
+        .hp-link.is-copied { color: #1a9e46; }
+
+        #hp-enter-btn {
+            position: fixed;
+            top: auto;
+            bottom: clamp(32px, 7vh, 54px);
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #hp-enter-btn:hover { transform: translateX(-50%) translateY(-1px); }
+
+        /* Static link preview — favicon-equivalent glyph, site name, URL. No
+           iframe and no network request: the target sites are never contacted,
+           so this costs nothing and can't leak the visitor's browsing. */
+        #hp-preview {
+            position: fixed;
+            z-index: 420;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(6px) scale(0.97);
+            transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #hp-preview.visible { opacity: 1; transform: translateY(0) scale(1); }
+        .hp-preview-icon {
+            width: 34px; height: 34px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.6);
+            flex: 0 0 auto;
+        }
+        .hp-preview-icon svg { width: 21px; height: 21px; fill: #3f3f3f; }
+        .hp-preview-name { font-size: 14px; font-weight: 500; color: #3f3f3f; line-height: 1.3; }
+        .hp-preview-url { font-size: 12px; color: #777777; line-height: 1.3; }
+
+        /* Copy confirmation. Deliberately the site's own surface rather than a
+           browser notification, and deliberately quiet: it says only what
+           happened, in the same restrained grey as everything else — darker
+           and more opaque than the link-preview card so it reads as a
+           confirmation rather than a hint. */
+        #hp-copied {
+            position: fixed;
+            z-index: 430;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(205, 205, 205, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.2px;
+            color: #2d2d2d;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(6px) scale(0.96);
+            transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #hp-copied.visible { opacity: 1; transform: translateY(0) scale(1); }
+        #hp-copied svg {
+            width: 13px; height: 13px;
+            fill: none; stroke: #555555;
+            stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        /* The shared #contact-btn rule below starts hidden because the Vault
+           reveals it during its boot sequence. The homepage copy has no such
+           sequence, so it's visible immediately. */
+        #hp-contact-btn { opacity: 1 !important; pointer-events: auto !important; }
+
+        #contact-btn,
+        #hp-contact-btn {
             left: auto;
             right: 32px;
             width: 104px;
@@ -445,7 +661,8 @@
                         opacity 0.8s ease;
         }
 
-        #contact-btn.is-open {
+        #contact-btn.is-open,
+        #hp-contact-btn.is-open {
             width: 180px;
             height: 204px;
             border-radius: 24px;
@@ -466,7 +683,8 @@
             display: flex; align-items: center; justify-content: center;
             transition: opacity 0.3s ease;
         }
-        #contact-btn.is-open .contact-label { opacity: 0; pointer-events: none; }
+        #contact-btn.is-open .contact-label,
+        #hp-contact-btn.is-open .contact-label { opacity: 0; pointer-events: none; }
 
         .contact-list {
             position: absolute;
@@ -479,7 +697,8 @@
             opacity: 0;
             pointer-events: none;
         }
-        #contact-btn.is-open .contact-list { opacity: 1; pointer-events: auto; }
+        #contact-btn.is-open .contact-list,
+        #hp-contact-btn.is-open .contact-list { opacity: 1; pointer-events: auto; }
 
         .contact-item {
             display: flex;
@@ -495,15 +714,20 @@
             transform: translateY(10px);
             transition: background 0.2s ease, transform 0.3s ease, opacity 0.2s ease;
         }
-        #contact-btn.is-open .contact-item {
+        #contact-btn.is-open .contact-item,
+        #hp-contact-btn.is-open .contact-item {
             opacity: 1;
             transform: translateY(0);
             transition: background 0.2s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease;
         }
-        #contact-btn.is-open .contact-item:nth-child(1) { transition-delay: 0.10s; }
-        #contact-btn.is-open .contact-item:nth-child(2) { transition-delay: 0.15s; }
-        #contact-btn.is-open .contact-item:nth-child(3) { transition-delay: 0.20s; }
-        #contact-btn.is-open .contact-item:nth-child(4) { transition-delay: 0.25s; }
+        #contact-btn.is-open .contact-item:nth-child(1),
+        #hp-contact-btn.is-open .contact-item:nth-child(1) { transition-delay: 0.10s; }
+        #contact-btn.is-open .contact-item:nth-child(2),
+        #hp-contact-btn.is-open .contact-item:nth-child(2) { transition-delay: 0.15s; }
+        #contact-btn.is-open .contact-item:nth-child(3),
+        #hp-contact-btn.is-open .contact-item:nth-child(3) { transition-delay: 0.20s; }
+        #contact-btn.is-open .contact-item:nth-child(4),
+        #hp-contact-btn.is-open .contact-item:nth-child(4) { transition-delay: 0.25s; }
         .contact-item:hover { background: rgba(255, 255, 255, 0.2); }
 
         .contact-item svg {
@@ -721,7 +945,8 @@
             right: calc(var(--vw) * 3);
             color: #FFFFFF;
         }
-        html.compact #contact-btn.is-open { width: 150px; height: 176px; border-radius: 20px; }
+        html.compact #contact-btn.is-open,
+        html.compact #hp-contact-btn.is-open { width: 150px; height: 176px; border-radius: 20px; }
         html.compact .contact-list { padding: 12px 8px; gap: 2px; }
         html.compact .contact-item { padding: 8px 12px; font-size: 14px; border-radius: 12px; }
         html.compact .contact-item svg, html.compact .be-logo { width: 16px; height: 16px; }
@@ -780,6 +1005,7 @@
         @media (prefers-reduced-motion: reduce) {
             .scroll-instruction span,
             .loading-text,
+            .hp-photo-inner,
             #mindmap-interact-text.fade-in { animation: none !important; }
             .welcome-text::after { animation: none; }
         }
@@ -796,7 +1022,7 @@
              - staggered home arrival after leaving the gallery
            ========================================================================== */
         :root {
-            --bg: #e0e0e0;
+            --bg: #CCCCCC;
 
             --ink: #2d2d2d;
             --ink-soft: rgba(45, 45, 45, 0.78);
@@ -815,6 +1041,21 @@
             --edge: 20px;
             --control-h: 36px;
             --header-h: 56px;
+
+            /* Mobile home vertical rhythm. Every offset below is derived from
+               these, so the tab bar, the panels under it and the profile stack
+               move together instead of being nudged individually. vh-clamped so
+               the composition compresses on short phones rather than pushing
+               the description off-screen. */
+            --tabbar-h: 52px;
+            --tab-gap-top: clamp(14px, 3.4vh, 28px);
+            --tab-gap-bottom: clamp(12px, 2.6vh, 22px);
+            /* Panels always start BELOW the bar. Previously they started
+               header+60px while the bar ran header+28 -> header+80, so the
+               heading and description sat under it. */
+            --panel-top: calc(var(--header-h) + env(safe-area-inset-top, 0px)
+                              + var(--tab-gap-top) + var(--tabbar-h) + var(--tab-gap-bottom));
+            --panel-bottom: env(safe-area-inset-bottom, 0px);
 
             --r-lg: 20px;
             --r-md: 18px;
@@ -1116,12 +1357,12 @@
         #mobile-root #tabslot {
             position: relative;
             width: 100%;
-            height: 52px;
-            flex: 0 0 52px;
+            height: var(--tabbar-h);
+            flex: 0 0 var(--tabbar-h);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-top: 28px;
+            margin-top: var(--tab-gap-top);
             z-index: 10;
         }
 
@@ -1130,8 +1371,8 @@
             display: flex;
             align-items: center;
             gap: 2px;
-            height: 44px;
-            padding: 4px;
+            height: var(--tabbar-h);
+            padding: 5px;
             border-radius: 999px;
             opacity: 0;
             transform: scale(0.92);
@@ -1142,8 +1383,8 @@
 
         #mobile-root #tab-indicator {
             position: absolute;
-            top: 4px; left: 0;
-            height: calc(100% - 8px);
+            top: 5px; left: 0;
+            height: calc(100% - 10px);
             border-radius: 999px;
             z-index: 1;
             opacity: 0;
@@ -1159,7 +1400,7 @@
             border: 0;
             background: none;
             padding: 0;
-            width: 52px;
+            width: 56px;
             height: 100%;
             display: flex;
             align-items: center;
@@ -1174,19 +1415,228 @@
             from { opacity: 0; transform: translateY(-8px) scale(0.82); }
             to   { opacity: 1; transform: translateY(0) scale(1); }
         }
-        #mobile-root .tab-btn svg { width: 20px; height: 20px; fill: currentColor; }
-        /* Optical correction: Naivaa's and A Thousand Islands' source artwork carries
-           more internal padding relative to its own viewBox than the other two
-           glyphs, so at identical box sizes they read visually smaller. */
+        #mobile-root .tab-btn svg { width: 24px; height: 24px; fill: currentColor; transition: color 0.32s var(--ease-soft); }
+        /* Optical correction: Naivaa's and A Thousand Islands' source artwork
+           carries more internal padding relative to its own viewBox, so at
+           identical box sizes they read visibly smaller than the other glyphs.
+           Profile's glyph is the opposite — it fills its box, so it needs less. */
         #mobile-root .tab-btn.icon-naivaa svg,
-        #mobile-root .tab-btn.icon-a-thousand-islands svg { width: 24px; height: 24px; }
-        /* Icons stay warm graphite regardless of selection — only the capsule pill
-           underneath indicates the active project. */
+        #mobile-root .tab-btn.icon-a-thousand-islands svg { width: 32px; height: 32px; }
+        #mobile-root .tab-btn.icon-profile svg { width: 19px; height: 19px; }
+        /* Active icon turns pure white. Driven through currentColor on the
+           button, so the same inline SVG serves both states — no second asset. */
+        #mobile-root .tab-btn[aria-selected="true"] { color: #ffffff; }
         #mobile-root .tab-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 999px; }
+
+        /* ==========================================================================
+           PROFILE SECTION (mobile home)
+           --------------------------------------------------------------------------
+           Shown when the Profile tab is active; the carousel blocks are hidden in
+           that state and vice-versa, driven by #home[data-section].
+           ========================================================================== */
+        /* Both sections occupy the same area and cross-fade. Critically, the
+           inactive one is hidden with visibility/opacity rather than
+           display:none — a display:none element has no layout box, so the
+           carousel's slide widths would measure zero while Profile was
+           active. Since the page boots on Profile, that left slideW stuck at
+           its 1px fallback, which made every jumpTo() target ≈ 0, trip the
+           "already there" early return, and silently skip the active/
+           activeProject update — the icon moved but the content didn't, and
+           scroll-derived indices were nonsense. visibility:hidden keeps the
+           box measurable, so layout stays correct in both states. */
+        #mobile-root #profile-panel,
+        #mobile-root #projects-panel {
+            position: absolute;
+            left: 0; right: 0;
+            top: var(--panel-top);
+            bottom: var(--panel-bottom);
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.34s ease, visibility 0s linear 0.34s;
+        }
+        #mobile-root #home[data-section="profile"] #profile-panel,
+        #mobile-root #home[data-section="projects"] #projects-panel {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            transition: opacity 0.34s ease, visibility 0s linear 0s;
+        }
+        /* The clock belongs to the Profile section only. */
+        #mobile-root #home[data-section="projects"] #profile-clock {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #mobile-root #profile-clock { transition: opacity 0.34s ease; }
+
+        #mobile-root #profile-panel {
+            padding: 0 26px;
+            min-height: 0;
+        }
+
+        /* ---- photo stack ----
+           Clustered: three cards fanned behind each other. Expanded: a flat row.
+           Both states are plain CSS transforms on the same three elements, so the
+           transition between them is a single interpolation with nothing to
+           orchestrate in JS. */
+        /* Fixed height in both states so expanding never reflows the bio
+           below — the cards are absolutely positioned inside this box, so
+           their arrangement changes without touching document flow. */
+        #mobile-root #profile-stack {
+            position: relative;
+            width: 100%;
+            /* Tight to the lowest card (clustered: 46 + 158 = 204; expanded:
+               30 + 172 = 202) so the box isn't padding out dead space above
+               the bio. Fixed in both states — expansion must never reflow. */
+            height: 208px;
+            margin-top: clamp(18px, 5vh, 46px);
+            flex: 0 0 auto;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #mobile-root .profile-photo {
+            position: absolute;
+            top: 0; left: 0;
+            width: 158px;
+            height: 158px;
+            border-radius: 22px;
+            overflow: hidden;
+            background: #bdbdbd;
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.20);
+            transition: transform 0.62s var(--ease-out), width 0.62s var(--ease-out), height 0.62s var(--ease-out);
+            will-change: transform;
+        }
+        #mobile-root .profile-photo img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            display: block;
+            pointer-events: none;
+        }
+        /* Clustered — back to front, each slightly offset and rotated. The sway
+           animation is applied to an inner wrapper so it composes with, rather
+           than overwrites, the positioning transform above. */
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(1) { transform: translate(46px, 4px) rotate(7deg); z-index: 1; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(2) { transform: translate(30px, 22px) rotate(3.5deg); z-index: 2; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(3) { transform: translate(0, 46px) rotate(0deg); z-index: 3; }
+        /* Expanded — flat row, no sway (movement stops once they settle). */
+        #mobile-root #profile-stack.is-expanded { height: 208px; }
+        #mobile-root #profile-stack.is-expanded .profile-photo {
+            width: 31.5%;
+            height: 172px;
+            border-radius: 20px;
+        }
+        /* Expansion order: the two REAR cards open outward first and define
+           the final row; the front portrait settles into place last. The
+           delays are on the children themselves rather than orchestrated in
+           JS, so the sequence is carried entirely by the same transition
+           that already animates the arrangement. */
+        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(1) { transform: translate(212%, 30px) rotate(0deg); transition-delay: 0s; }
+        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(2) { transform: translate(106%, 30px) rotate(0deg); transition-delay: 0.04s; }
+        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(3) { transform: translate(0, 30px) rotate(0deg); transition-delay: 0.16s; }
+        /* Collapsing reverses it — the portrait moves back over them first. */
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(3) { transition-delay: 0s; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(2) { transition-delay: 0.08s; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(1) { transition-delay: 0.14s; }
+
+        /* Organic sway — only while clustered. Three different durations and
+           delays keep the three cards from ever syncing up, which is what sells
+           it as organic rather than mechanical. Transform-only, so it stays on
+           the compositor and costs effectively nothing. */
+        /* Overfilled so the sway can never expose the card's own background at
+           the edges — the inner is what animates, and it's inside overflow:hidden. */
+        #mobile-root .profile-photo-inner { width: 116%; height: 116%; margin: -8% 0 0 -8%; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(1) .profile-photo-inner { animation: profileSwayA 6.4s ease-in-out infinite; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(2) .profile-photo-inner { animation: profileSwayB 8.1s ease-in-out -2.7s infinite; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(3) .profile-photo-inner { animation: profileSwayC 5.6s ease-in-out -3.9s infinite; }
+        /* Three stops rather than two: the extra waypoint means the return leg
+           doesn't retrace the outbound one, which is what stops a loop this
+           short from reading as a mechanical back-and-forth. Durations stay
+           mutually prime-ish so the three cards never sync up. */
+        @keyframes profileSwayA {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            34%      { transform: translate(-5px, -8px) rotate(-1.9deg); }
+            67%      { transform: translate(3px, -3px) rotate(0.8deg); }
+        }
+        @keyframes profileSwayB {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            40%      { transform: translate(7px, -6px) rotate(1.7deg); }
+            72%      { transform: translate(-2px, 3px) rotate(-0.9deg); }
+        }
+        @keyframes profileSwayC {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            45%      { transform: translate(-5px, 6px) rotate(-1.5deg); }
+            78%      { transform: translate(4px, 2px) rotate(0.9deg); }
+        }
+
+        /* ---- bio ---- */
+        #mobile-root #profile-bio {
+            margin: clamp(18px, 3.6vh, 32px) 0 0;
+            font-size: 0.95rem;
+            font-weight: 500;
+            line-height: 1.62;
+            color: var(--ink);
+            white-space: pre-line;
+        }
+        #mobile-root .profile-link {
+            color: #ffffff;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+        #mobile-root .profile-link:active { color: var(--ink); }
+        /* Single span rather than Contact's two-span swap, so confirmation is
+           a colour flash in the same green Contact uses. */
+        #mobile-root .profile-link.copied { color: #1a9e46; }
+
+        /* Copy confirmation bubble — same restrained, darker grey-tinted glass
+           as the desktop equivalent (#hp-copied), so both platforms read as
+           one aesthetic. The colour flash on the link alone isn't sufficient
+           feedback; this makes the copy unmistakable. */
+        #mobile-root #m-copied {
+            position: fixed;
+            z-index: 500;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(205, 205, 205, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.2px;
+            color: #2d2d2d;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(6px) scale(0.96);
+            transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #mobile-root #m-copied.visible { opacity: 1; transform: translateY(0) scale(1); }
+        #mobile-root #m-copied svg {
+            width: 13px; height: 13px;
+            fill: none; stroke: #555555;
+            stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        /* ---- clock ---- */
+        #mobile-root #profile-clock {
+            position: absolute;
+            left: 0; right: 0;
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--ink);
+            pointer-events: none;
+        }
+        #mobile-root #clock-place { color: #ffffff; }
 
         /* ---- project name ---- */
         #mobile-root #project-name {
-            margin-top: 18px;
+            margin-top: 0;
+            margin-bottom: clamp(4px, 1vh, 10px);
             flex: 0 0 auto;
             font-size: 1.28rem;
             font-weight: 600;
@@ -1240,7 +1690,7 @@
         #mobile-root .frame {
             position: relative;
             width: 100%;
-            height: 92%;
+            height: 86%;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1261,8 +1711,8 @@
         #mobile-root #meta {
             flex: 0 0 auto;
             width: 100%;
-            height: 148px;
-            padding: 18px var(--edge) 0;
+            height: clamp(126px, 20vh, 148px);
+            padding: clamp(12px, 2.2vh, 18px) var(--edge) 0;
             overflow: hidden;
             text-align: center;
             opacity: 0;
@@ -1356,9 +1806,19 @@
             display: none;
             opacity: 0;
             transform-style: preserve-3d;
-            will-change: transform, opacity;
             pointer-events: auto;
         }
+        /* will-change is scoped to the active page rather than applied
+           unconditionally. As a standing hint it kept every card that had
+           ever been shown promoted to its own GPU compositing layer for the
+           rest of the session — including while Home was in front of it —
+           which is what degraded Home's touch responsiveness after a Gallery
+           visit. Scoping it here means the promotion is dropped by CSS alone
+           the moment the page changes, independent of any JS cleanup.
+           'opacity' is deliberately not hinted: it's set once when a card is
+           revealed and never animated per-frame, so hinting it would reserve
+           compositor resources for nothing. */
+        #mobile-root[data-page="gallery"] .gallery-card { will-change: transform; }
         /* Separate inner element for the one-time entrance scale/fade, so it
            never fights the outer element's own per-frame JS transform (position/
            rotation/opacity from the scroll math) — the two layers are
@@ -1543,6 +2003,11 @@
            here or in JS. Per direction, the same arc constants run regardless
            of orientation rather than being retuned per shape.
            ========================================================================== */
+        #mobile-root[data-orient="landscape"] {
+            --tabbar-h: 40px;
+            --tab-gap-top: 8px;
+            --tab-gap-bottom: 10px;
+        }
         #mobile-root[data-orient="landscape"] #home {
             display: grid;
             grid-template-columns: 58% 42%;
@@ -1581,6 +2046,61 @@
         #mobile-root[data-orient="landscape"] #position-dots { justify-content: flex-start; }
         #mobile-root[data-orient="landscape"] #description { margin: 0; }
 
+        /* PROFILE (landscape): the cluster sits to the LEFT of the paragraph
+           rather than stacked above it, and tapping it expands the three
+           photos into a vertical column instead of a horizontal row — the
+           only sensible direction to grow in a wide-short viewport. Sizes are
+           vh-clamped (landscape height is the tight dimension here, not
+           width) so this fits comfortably across typical landscape phone
+           heights without overlapping the paragraph. */
+        #mobile-root[data-orient="landscape"] #profile-panel {
+            flex-direction: row;
+            align-items: center;
+            gap: clamp(16px, 3vw, 26px);
+            padding: 0 clamp(16px, 4vw, 28px);
+        }
+        #mobile-root[data-orient="landscape"] #profile-stack {
+            --pl-card: clamp(80px, 11vh, 106px);
+            --pl-gap: 12px;
+            flex: 0 0 auto;
+            width: var(--pl-card);
+            height: clamp(200px, 60vh, 280px);
+            margin-top: 0;
+        }
+        #mobile-root[data-orient="landscape"] #profile-stack .profile-photo {
+            width: var(--pl-card);
+            height: var(--pl-card);
+            border-radius: 18px;
+        }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(1) { transform: translate(0, 6px) rotate(7deg); }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(2) { transform: translate(0, 16px) rotate(3.5deg); }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(3) { transform: translate(0, 30px) rotate(0deg); }
+        /* Vertical column on expand — same rear-cards-first ordering as
+           portrait/desktop, just along Y instead of X. */
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo:nth-child(1) { transform: translate(0, calc((var(--pl-card) + var(--pl-gap)) * 2)) rotate(0deg); transition-delay: 0s; }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo:nth-child(2) { transform: translate(0, calc(var(--pl-card) + var(--pl-gap))) rotate(0deg); transition-delay: 0.04s; }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo:nth-child(3) { transform: translate(0, 0) rotate(0deg); transition-delay: 0.16s; }
+        #mobile-root[data-orient="landscape"] #profile-bio {
+            margin-top: 0;
+            flex: 1 1 auto;
+            min-width: 0;
+            font-size: clamp(12.5px, 1.7vh, 14.5px);
+            line-height: 1.5;
+        }
+        #mobile-root[data-orient="landscape"] #profile-clock {
+            bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(6px, 1.6vh, 12px));
+            font-size: 0.78rem;
+        }
+
+        /* GALLERY (landscape): "Welcome to My Vault" sat right on top of the
+           first video tile in a short landscape viewport. Pulled up closer to
+           the header (small clamped gap instead of a fixed 22px) and shrunk
+           proportionally so it clears the tile below with real separation. */
+        #mobile-root[data-orient="landscape"] #gallery-welcome {
+            top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + clamp(2px, 1vh, 8px));
+            font-size: clamp(0.7rem, 2.4vh, 0.9rem);
+        }
+
         /* ==========================================================================
            7. REDUCED MOTION
            ========================================================================== */
@@ -1589,6 +2109,7 @@
             #mobile-root #home.arrive #project-name,
             #mobile-root #home.arrive #carousel,
             #mobile-root #home.arrive #meta { animation: none; }
+            #mobile-root .profile-photo-inner { animation: none !important; }
             #mobile-root * { scroll-behavior: auto !important; }
         }
 
@@ -1600,6 +2121,58 @@
          SCENE 1: WEBGL LANDING
          ====================================================================== -->
     <div id="desktop-root">
+
+    <!-- ======================================================================
+         HOMEPAGE — introductory layer shown before the Vault.
+         Sits above scene-one; fades out on entry and never interferes with
+         the particle system or interaction logic afterwards.
+         ====================================================================== -->
+    <div id="homepage">
+        <button id="hp-name-btn" class="nav-btn" type="button">Joel Meshak</button>
+
+        <div id="hp-contact-btn" class="nav-btn" role="button" tabindex="0" aria-label="Contact details">
+            <div class="contact-label">Contact</div>
+            <div class="contact-list">
+                <div class="contact-item" data-copy="byjoelmeshak@gmail.com">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                    <div class="item-text-wrapper"><span class="original">Email</span><span class="copied">Copied</span></div>
+                </div>
+                <div class="contact-item" data-copy="https://www.instagram.com/byjoelmeshak/">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+                    <div class="item-text-wrapper"><span class="original">Instagram</span><span class="copied">Copied</span></div>
+                </div>
+                <div class="contact-item" data-copy="https://www.behance.net/JoelMeshak">
+                    <span class="be-logo">Bē</span>
+                    <div class="item-text-wrapper"><span class="original">Behance</span><span class="copied">Copied</span></div>
+                </div>
+                <div class="contact-item" data-copy="+254795330183">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                    <div class="item-text-wrapper"><span class="original">Phone</span><span class="copied">Copied</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="hp-inner">
+            <div id="hp-stack" class="is-clustered"></div>
+            <p id="hp-bio"></p>
+        </div>
+
+        <button id="hp-enter-btn" class="nav-btn" type="button">Enter The Vault</button>
+
+        <div id="hp-preview" aria-hidden="true">
+            <div class="hp-preview-icon"></div>
+            <div class="hp-preview-text">
+                <div class="hp-preview-name"></div>
+                <div class="hp-preview-url"></div>
+            </div>
+        </div>
+
+        <div id="hp-copied" role="status" aria-live="polite">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+            <span>Copied</span>
+        </div>
+    </div>
+
     <div id="scene-one">
         <div id="webgl-module">
             <button id="home-btn" class="nav-btn" type="button">Joel Meshak</button>
@@ -1789,22 +2362,31 @@
         </div>
     </header>
 
-    <section id="home" class="page active" role="tabpanel" aria-label="Home">
+    <section id="home" class="page active" data-section="profile" role="tabpanel" aria-label="Home">
         <div id="tabslot">
             <div id="tabbar" class="glass" role="tablist" aria-label="Projects">
                 <div id="tab-indicator" class="capsule"></div>
             </div>
         </div>
 
-        <div id="project-name"></div>
-
-        <div id="carousel"></div>
-
-        <div id="meta">
-            <div id="collection"></div>
-            <div id="position-dots"></div>
-            <p id="description"></p>
+        <div id="profile-panel">
+            <div id="profile-stack" class="is-clustered" role="button" tabindex="0" aria-label="Expand photos"></div>
+            <p id="profile-bio"></p>
         </div>
+
+        <div id="projects-panel">
+            <div id="project-name"></div>
+
+            <div id="carousel"></div>
+
+            <div id="meta">
+                <div id="collection"></div>
+                <div id="position-dots"></div>
+                <p id="description"></p>
+            </div>
+        </div>
+
+        <div id="profile-clock"><span id="clock-time"></span> <span id="clock-place">in Nairobi, KE</span></div>
     </section>
 
     <section id="gallery" class="page" role="tabpanel" aria-label="Gallery">
@@ -1816,9 +2398,303 @@
         </div>
     </section>
 
+    <div id="m-copied" role="status" aria-live="polite">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+        <span>Copied</span>
+    </div>
+
 </div>
 
 <script type="module">
+/* ==========================================================================
+   SHARED HOMEPAGE / PROFILE CONTENT — same copy on desktop and mobile.
+   --------------------------------------------------------------------------
+   Lives at true module top level so BOTH initMobile() and initDesktop() can
+   close over it. Previously this was declared with `const` inside
+   initMobile() only — the desktop Homepage IIFE inside initDesktop() also
+   referenced PROFILE_PHOTOS/PROFILE_LINKS, but a function has no lexical
+   access to another function's local consts. That made the desktop
+   Homepage's buildStack()/buildBio() throw a ReferenceError the moment they
+   ran, which aborted the rest of initDesktop()'s synchronous setup (the
+   `const Homepage = (() => {...})()` IIFE never finished, so the `Homepage`
+   binding itself was left permanently uninitialized) — the actual cause of
+   the desktop Profile page rendering blank and "Joel Meshak" silently doing
+   nothing when clicked.
+   ========================================================================== */
+const PROFILE_PHOTOS = [
+    'assets/profilepic1.png',
+    'assets/profilepic2.png',
+    'assets/profilepic3.png'
+];
+const PROFILE_LINKS = {
+    naivaa: { name: 'Naivaa', url: 'https://www.instagram.com/naivaa.apparel/' },
+    ati: { name: 'A Thousand Islands', url: 'https://athousandislands.tech/' }
+};
+
+/* ==========================================================================
+   VAULT BRIDGE
+   --------------------------------------------------------------------------
+   Hand-off between the desktop Homepage (plain DOM/CSS, built and interactive
+   immediately) and the Vault (THREE.js/GSAP, loaded from CDN inside
+   initDesktop — an async chain that can be slow, or in a broken environment
+   never resolve at all). "Enter The Vault" must never depend on that chain
+   having already finished. If it hasn't, the click is queued here and fired
+   the moment initDesktop() calls markReady().
+   ========================================================================== */
+const VaultBridge = (() => {
+    let ready = false;
+    let enterFn = null;
+    let queue = [];
+    return {
+        get ready() { return ready; },
+        onReady(cb) { if (ready) cb(); else queue.push(cb); },
+        markReady(fn) {
+            enterFn = fn;
+            ready = true;
+            const q = queue; queue = [];
+            q.forEach(cb => cb());
+        },
+        enter() { if (enterFn) enterFn(); }
+    };
+})();
+
+/* ==========================================================================
+   DESKTOP HOMEPAGE
+   --------------------------------------------------------------------------
+   Deliberately a standalone top-level function, NOT nested inside
+   initDesktop(). It renders and is fully interactive the moment the script
+   runs — the photo cluster, bio, links, copy-feedback and Contact dropdown
+   are all plain DOM/CSS with zero dependency on THREE.js, GSAP, or any CDN
+   fetch. Only "Enter The Vault" needs the Vault itself, and that hands off
+   through VaultBridge above rather than calling into initDesktop()'s scope
+   directly — so a slow network, a blocked CDN, or an unrelated error deep in
+   the WebGL/particle setup can no longer take the entire Homepage down with
+   it. (That coupling — the Homepage IIFE living inside initDesktop() and one
+   uncaught exception anywhere before it aborting the rest of that function,
+   including the `const Homepage = ...` assignment itself — was the actual
+   cause of the desktop Profile page rendering blank across previous rounds.)
+   ========================================================================== */
+function initDesktopHomepage() {
+    const el = document.getElementById('homepage');
+    const stack = document.getElementById('hp-stack');
+    const bio = document.getElementById('hp-bio');
+    const enterBtn = document.getElementById('hp-enter-btn');
+    const nameBtn = document.getElementById('hp-name-btn');
+    const preview = document.getElementById('hp-preview');
+    const pvIcon = preview.querySelector('.hp-preview-icon');
+    const pvName = preview.querySelector('.hp-preview-name');
+    const pvUrl = preview.querySelector('.hp-preview-url');
+    const copied = document.getElementById('hp-copied');
+
+    /* Reuses the tab-bar glyphs as the preview "favicons" — already inline
+       in the bundle, so the preview costs no extra request and never
+       contacts the target site. */
+    const PREVIEW_ICONS = {
+        naivaa: `<svg viewBox="0 0 207.7 200.9" aria-hidden="true"><path d="M103.9,30.8c-38.5,0-69.7,31.2-69.7,69.7s31.2,69.6,69.7,69.6,69.7-31.2,69.7-69.6S142.3,30.8,103.9,30.8ZM137.4,142.7h-18.3c-2.2,0-5.2-1.3-6.7-2.9l-25.2-27.2c-1.5-1.6-2.7-1.1-2.7,1.1v25.1c0,2.2-1.8,4-4,4h-10.1c-2.2,0-4-1.8-4-4v-67.1c0-2.2,1.3-2.7,2.8-1.2l69.5,69.5c1.5,1.5,1,2.8-1.2,2.8ZM141.4,128.8c0,2.2-1.3,2.7-2.8,1.2L69.6,61c-1.5-1.5-1-2.8,1.2-2.8h15.4c1,0,3,1.3,4.6,2.8l29.7,29.6c1.6,1.6,2.8,1,2.8-1.2v-27.2c0-2.2,1.8-4,4-4h10.1c2.2,0,4,1.8,4,4v66.6Z"/></svg>`,
+        ati: `<svg viewBox="0 0 764.5 703.5" aria-hidden="true"><path fill-rule="evenodd" d="M323.8,239.7c33.9-2.5,76.4-1.2,110.4.8,26.8,1.6,36.1,2.4,59.5,16.4,19.8,11.9,80.1,51.4,92.7,67.3s9.7,16.6,11.5,25.8c3.9,20,5.3,72-2.5,90.3-11.2,26.3-47.9,26-72.2,24.1-53.5-4.2-101.8-74.1-146.8-69.9-30.1,2.8-73.8,47.8-104.8,61.3-27.1,11.8-88.2,18-102.5-15.1-8-18.7-7.1-82.5,0-101.8s50.2-47.9,69.2-60.8c29-19.8,48.7-35.7,85.6-38.4ZM374.3,258.9c-34.3,4.7-75.8,56.4-116.7,67.4-28.5,7.7-64.9-4.8-78.6,29.8s-9.6,69.5,19.2,72.2,67.2-37.5,94.9-48.4c21-8.2,55.1-4.2,78.5-4.5s76.2-7.1,106.5,7.7c25.8,12.7,98.4,80.6,110.3,20.2,4-20.5,1.7-50.3-15.9-64-16.6-13-39.2-7.5-58.6-11.2-33.8-6.5-60.7-32.9-88.4-51.2-16.7-11-29.7-20.9-51.2-18Z"/></svg>`
+    };
+
+    function prettyUrl(u) {
+        return u.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    }
+
+    /* Shared placement for both floating cards: sits to the RIGHT of the
+       anchor word, in its own space, rather than centred above/below it —
+       centring made both the link preview and the copy confirmation overlap
+       the surrounding bio text. Falls back to the left of the word if there
+       isn't room on the right, vertically centred on the word's own line,
+       clamped so a link near the viewport edge can't push the card off-screen.
+       Measured after a frame because width isn't known until the content is in. */
+    function placeOver(target, anchor) {
+        const r = anchor.getBoundingClientRect();
+        target.style.visibility = 'hidden';
+        target.classList.add('visible');
+        requestAnimationFrame(() => {
+            const pw = target.offsetWidth, ph = target.offsetHeight;
+            const gap = 14;
+            let left = r.right + gap;
+            if (left + pw > window.innerWidth - 16) left = r.left - pw - gap;
+            left = Math.max(16, Math.min(left, window.innerWidth - pw - 16));
+            let top = r.top + r.height / 2 - ph / 2;
+            top = Math.max(16, Math.min(top, window.innerHeight - ph - 16));
+            target.style.left = left + 'px';
+            target.style.top = top + 'px';
+            target.style.visibility = '';
+        });
+    }
+
+    let pvTimer = null;
+    function showPreview(key, anchor) {
+        const cfg = PROFILE_LINKS[key];
+        pvIcon.innerHTML = PREVIEW_ICONS[key] || '';
+        pvName.textContent = cfg.name;
+        pvUrl.textContent = prettyUrl(cfg.url);
+        placeOver(preview, anchor);
+    }
+    function hidePreview() {
+        clearTimeout(pvTimer);
+        preview.classList.remove('visible');
+    }
+
+    let copiedTimer = null;
+    function showCopied(anchor) {
+        /* The hover preview and the confirmation would otherwise stack on
+           the same spot — the confirmation is the more important message. */
+        hidePreview();
+        placeOver(copied, anchor);
+        clearTimeout(copiedTimer);
+        copiedTimer = setTimeout(() => copied.classList.remove('visible'), 1500);
+    }
+    function hideCopied() {
+        clearTimeout(copiedTimer);
+        copied.classList.remove('visible');
+    }
+
+    function buildBio() {
+        const link = (key) => {
+            const cfg = PROFILE_LINKS[key];
+            const s = document.createElement('span');
+            s.className = 'hp-link';
+            s.textContent = cfg.name;
+            s.addEventListener('mouseenter', () => {
+                clearTimeout(pvTimer);
+                pvTimer = setTimeout(() => showPreview(key, s), 140);
+            });
+            s.addEventListener('mouseleave', hidePreview);
+            /* Copy rather than navigate — the visitor stays on the site. */
+            s.addEventListener('click', () => {
+                const done = () => {
+                    s.classList.add('is-copied');
+                    showCopied(s);
+                    setTimeout(() => s.classList.remove('is-copied'), 1400);
+                };
+                if (navigator.clipboard) navigator.clipboard.writeText(cfg.url).then(done).catch(done);
+                else done();
+            });
+            return s;
+        };
+        bio.textContent = '';
+        bio.append(
+            'Hey, I\u2019m a Creative Technologist\nbased in Nairobi, Kenya.\n\nCreative Director at ',
+            link('naivaa'),
+            '\nCurrently building ',
+            link('ati'),
+            '\nDesigner, artist, and retired Professional Futsal Player\n(Don\u2019t fact-check this, just trust me.)\n\nI design stuff I wanna see in the world :)'
+        );
+    }
+
+    function buildStack() {
+        /* Back-to-front so nth-child z-index reads naturally: the portrait
+           sits on top when clustered. */
+        [PROFILE_PHOTOS[1], PROFILE_PHOTOS[2], PROFILE_PHOTOS[0]].forEach(src => {
+            const card = document.createElement('div');
+            card.className = 'hp-photo';
+            const inner = document.createElement('div');
+            inner.className = 'hp-photo-inner';
+            const img = document.createElement('img');
+            img.src = src; img.alt = ''; img.decoding = 'async';
+            inner.appendChild(img);
+            card.appendChild(inner);
+            stack.appendChild(card);
+        });
+    }
+
+    /* Desktop expands on hover, collapses on leave. */
+    stack.addEventListener('mouseenter', () => {
+        stack.classList.remove('is-clustered');
+        stack.classList.add('is-expanded');
+    });
+    stack.addEventListener('mouseleave', () => {
+        stack.classList.remove('is-expanded');
+        stack.classList.add('is-clustered');
+    });
+
+    let goneTimer = null;
+    let enterPending = false;
+
+    function proceedIntoVault() {
+        enterPending = false;
+        enterBtn.textContent = 'Enter The Vault';
+        hidePreview();
+        hideCopied();
+        el.classList.add('leaving');
+        /* The arrival is part of entering, not a one-time intro — the Vault
+           side (resetVaultToOrb + startVaultEntrance, wired in via
+           VaultBridge.markReady) winds itself back and replays every time. */
+        VaultBridge.enter();
+        /* Matches the CSS opacity transition, then drops the overlay out
+           of the document flow entirely. */
+        clearTimeout(goneTimer);
+        goneTimer = setTimeout(() => el.classList.add('gone'), 900);
+    }
+
+    function enterVault() {
+        if (enterPending) return;
+        if (!VaultBridge.ready) {
+            /* The Vault's THREE.js/GSAP CDN chain hasn't finished yet — queue
+             the entrance instead of doing nothing, so a fast click right after
+             page load still works once loading completes. */
+            enterPending = true;
+            enterBtn.textContent = 'Loading\u2026';
+            VaultBridge.onReady(proceedIntoVault);
+            return;
+        }
+        proceedIntoVault();
+    }
+    enterBtn.addEventListener('click', enterVault);
+
+    /* The name button returns here from anywhere in the Vault. */
+    function show() {
+        /* Cancel a pending hide — otherwise a fast Vault -> Home bounce
+           would re-apply display:none moments after we un-applied it. */
+        clearTimeout(goneTimer);
+        goneTimer = null;
+        hideCopied();
+        el.classList.remove('gone');
+        requestAnimationFrame(() => el.classList.remove('leaving'));
+    }
+    nameBtn.addEventListener('click', () => { /* already home */ });
+
+    /* Contact dropdown on the homepage — same copy-and-confirm behaviour as
+       the Vault's own, plus its own open/close handling. Pure DOM, so it
+       lives here rather than inside initDesktop() as well. */
+    (() => {
+        const hpContact = document.getElementById('hp-contact-btn');
+        const open = () => hpContact.classList.add('is-open');
+        const close = () => hpContact.classList.remove('is-open');
+
+        hpContact.addEventListener('mouseenter', open);
+        hpContact.addEventListener('mouseleave', close);
+        hpContact.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hpContact.classList.toggle('is-open');
+        });
+        hpContact.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); hpContact.classList.toggle('is-open'); }
+            if (e.key === 'Escape') close();
+        });
+        document.addEventListener('click', close);
+
+        hpContact.querySelectorAll('.contact-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const text = item.getAttribute('data-copy');
+                const done = () => {
+                    item.classList.add('is-copied');
+                    setTimeout(() => item.classList.remove('is-copied'), 1500);
+                };
+                if (navigator.clipboard) navigator.clipboard.writeText(text).then(done).catch(done);
+                else done();
+            });
+        });
+    })();
+
+    buildBio();
+    buildStack();
+
+    return { show, enterVault };
+}
+
 function initMobile() {
     /* ==========================================================================
        MOBILE EXPERIENCE — round 5
@@ -1859,6 +2735,7 @@ function initMobile() {
        DATA
        ========================================================================== */
     const PROJECTS = [
+        { key: 'profile', name: 'Profile', isProfile: true, collections: [] },
         {
             key: 'naivaa', name: 'Naivaa',
             collections: [
@@ -1938,7 +2815,14 @@ function initMobile() {
             }));
         });
     });
-    const PROJECT_START = PROJECTS.map((_, pi) => CARDS.findIndex(c => c.project === pi));
+    /* Profile has no cards, so findIndex returns -1 for it — mapped to 0 so
+       any accidental lookup lands on a valid card rather than breaking. The
+       Profile section is never reached through the carousel anyway; only a
+       direct icon tap activates it. */
+    const PROJECT_START = PROJECTS.map((_, pi) => {
+        const idx = CARDS.findIndex(c => c.project === pi);
+        return idx === -1 ? 0 : idx;
+    });
 
     /* Home carousel's project video entries — separate from the Gallery
        page's own GALLERY_VIDEOS list below. */
@@ -1954,6 +2838,7 @@ function initMobile() {
     ];
 
     const ICONS = {
+        'profile': `<svg viewBox="0 0 64.9 65" aria-hidden="true"><path d="M15.75,16.7c0,9.2,7.5,16.7,16.7,16.7s16.7-7.5,16.7-16.7S41.65,0,32.45,0,15.75,7.5,15.75,16.7Z"/><path d="M1.5,65h61.9c.8,0,1.5-.7,1.5-1.5,0-11.5-5.9-21.9-15.7-27.8-.5-.3-1.1-.3-1.6,0-4.6,2.8-9.8,4.2-15.2,4.2s-10.6-1.5-15.2-4.2c-.5-.3-1.1-.3-1.6,0C5.8,41.6,0,52,0,63.5c0,.8.6,1.5,1.5,1.5h0Z"/></svg>`,
         'naivaa': `<svg viewBox="0 0 207.7 200.9" aria-hidden="true"><path d="M103.9,30.8c-38.5,0-69.7,31.2-69.7,69.7s31.2,69.6,69.7,69.6,69.7-31.2,69.7-69.6S142.3,30.8,103.9,30.8ZM137.4,142.7h-18.3c-2.2,0-5.2-1.3-6.7-2.9l-25.2-27.2c-1.5-1.6-2.7-1.1-2.7,1.1v25.1c0,2.2-1.8,4-4,4h-10.1c-2.2,0-4-1.8-4-4v-67.1c0-2.2,1.3-2.7,2.8-1.2l69.5,69.5c1.5,1.5,1,2.8-1.2,2.8ZM141.4,128.8c0,2.2-1.3,2.7-2.8,1.2L69.6,61c-1.5-1.5-1-2.8,1.2-2.8h15.4c1,0,3,1.3,4.6,2.8l29.7,29.6c1.6,1.6,2.8,1,2.8-1.2v-27.2c0-2.2,1.8-4,4-4h10.1c2.2,0,4,1.8,4,4v66.6Z"/></svg>`,
         'digital-art': `<svg viewBox="0 0 90 75" aria-hidden="true"><path d="M75,9.4h-.8l-6.9,7.5h5.8c1,0,1.9.8,1.9,1.9v31.9c0,1-.8,1.9-1.9,1.9H16.9c-1,0-1.9-.8-1.9-1.9v-31.9c0-1,.8-1.9,1.9-1.9h29.1l8.2-7.5H15c-4.1,0-7.5,3.4-7.5,7.5v41.2c0,1,.8,1.9,1.9,1.9h71.2c1,0,1.9-.8,1.9-1.9V16.9c0-4.1-3.4-7.5-7.5-7.5h0Z"/><path d="M87.2,63.8h-27.9c-.7,0-1.4.4-1.7,1l-.3.6c-.6,1.3-1.9,2.1-3.4,2.1h-17.9c-1.4,0-2.7-.8-3.4-2.1l-.3-.6c-.3-.6-1-1-1.7-1H2.8c-1.6,0-2.8,1.3-2.8,2.8v.9c0,4.1,3.4,7.5,7.5,7.5h75c4.1,0,7.5-3.4,7.5-7.5v-.9c0-1.6-1.3-2.8-2.8-2.8h0Z"/><path d="M42.6,35.8c0,1.4-.6,2.9-1.7,3.9-2.7,2.6-6,3.6-10.4,3.6-.8,0-1.2-.9-.8-1.5,3.3-4.4,1.6-5.7,4.8-8.9s2.4-1.5,3.7-1.5h0c.4,1,1,1.9,1.8,2.7.8.8,1.7,1.4,2.6,1.8h0Z"/><path d="M73.1.9c-1.1-1.1-2.9-1.2-4.1,0l-26.3,24.1c-1.9,1.7-1.9,4.7-.1,6.5,1.8,1.8,4.8,1.7,6.5-.1l24.1-26.3c1.1-1.2,1-2.9,0-4.1h0Z"/></svg>`,
         'graphic-design': `<svg viewBox="0 0 76 84" aria-hidden="true"><path d="M39.71,10.97l-.03-.03c-.08-.13-.18-.25-.29-.36-.02-.02-.04-.03-.06-.05-.1-.09-.2-.16-.31-.23-.04-.02-.08-.05-.12-.07-.1-.05-.21-.09-.32-.13-.04-.01-.08-.03-.13-.04-.15-.04-.31-.06-.47-.06s-.32.02-.47.06c-.04.01-.08.03-.13.04-.11.03-.22.08-.32.13-.04.02-.08.04-.12.07-.11.07-.22.15-.31.23-.02.02-.04.03-.06.05-.11.11-.2.23-.29.36l-.03.03L12.26,50.97c-.47.79-.35,1.79.3,2.44l2.93,2.93c4.21,4.19,6.51,9.75,6.51,15.66v10c0,1.1.9,2,2,2s2-.9,2-2v-8h24v8c0,1.1.9,2,2,2s2-.9,2-2v-10c0-5.91,2.3-11.47,6.49-15.66l2.93-2.93c.65-.65.77-1.66.3-2.44L39.71,10.97ZM38,48c2.21,0,4,1.79,4,4s-1.79,4-4,4-4-1.79-4-4,1.79-4,4-4ZM57.66,53.51c-4.46,4.46-7.11,10.26-7.58,16.49h-24.16c-.47-6.23-3.12-12.02-7.58-16.49l-1.82-1.82,19.48-32.47v25.04c-3.44.89-6,4.02-6,7.74,0,4.41,3.59,8,8,8s8-3.59,8-8c0-3.72-2.56-6.85-6-7.74v-25.04l19.48,32.47-1.82,1.82ZM76,2c0,1.1-.9,2-2,2h-19.54c11.59,5.99,19.54,18.08,19.54,32,0,1.1-.9,2-2,2s-2-.9-2-2c0-17.64-14.36-32-32-32S6,18.36,6,36c0,1.1-.9,2-2,2s-2-.9-2-2C2,22.08,9.95,9.99,21.54,4H2c-1.1,0-2-.9-2-2S.9,0,2,0h72c1.1,0,2,.9,2,2Z"/></svg>`,
@@ -2077,6 +2962,35 @@ function initMobile() {
     backBtn.addEventListener('click', () => goto('home'));
 
     /* ==========================================================================
+       COPY CONFIRMATION BUBBLE
+       --------------------------------------------------------------------------
+       Shared by the Profile bio's Naivaa/A Thousand Islands links. Centred
+       above the tapped word (falling back below if there's no room), clamped
+       to the viewport — mobile's bio column is narrow enough that a
+       to-the-right placement (as used on desktop) would routinely run off
+       screen, so this stays with the simpler above/below placement.
+       ========================================================================== */
+    const mCopiedEl = document.getElementById('m-copied');
+    let mCopiedTimer = null;
+    function showMobileCopied(anchor) {
+        const r = anchor.getBoundingClientRect();
+        mCopiedEl.style.visibility = 'hidden';
+        mCopiedEl.classList.add('visible');
+        requestAnimationFrame(() => {
+            const pw = mCopiedEl.offsetWidth, ph = mCopiedEl.offsetHeight;
+            let left = r.left + r.width / 2 - pw / 2;
+            left = Math.max(12, Math.min(left, window.innerWidth - pw - 12));
+            let top = r.top - ph - 10;
+            if (top < 12) top = r.bottom + 10;
+            mCopiedEl.style.left = left + 'px';
+            mCopiedEl.style.top = top + 'px';
+            mCopiedEl.style.visibility = '';
+        });
+        clearTimeout(mCopiedTimer);
+        mCopiedTimer = setTimeout(() => mCopiedEl.classList.remove('visible'), 1500);
+    }
+
+    /* ==========================================================================
        CONTACT
        ========================================================================== */
     const Contact = (() => {
@@ -2094,26 +3008,148 @@ function initMobile() {
         document.addEventListener('click', (e) => {
             if (el.classList.contains('is-open') && !el.contains(e.target)) el.classList.remove('is-open');
         });
+        /* Shared so the Profile links reuse this exact copy + feedback path
+           rather than duplicating it. */
+        function copyValue(text, el) {
+            const done = () => { el.classList.add('copied'); setTimeout(() => el.classList.remove('copied'), 1200); };
+            if (navigator.clipboard) navigator.clipboard.writeText(text).then(done).catch(done);
+            else done();
+        }
         items.forEach(item => {
             item.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const text = item.getAttribute('data-copy');
-                const done = () => { item.classList.add('copied'); setTimeout(() => item.classList.remove('copied'), 1200); };
-                if (navigator.clipboard) navigator.clipboard.writeText(text).then(done).catch(() => {});
-                else done();
+                copyValue(item.getAttribute('data-copy'), item);
             });
         });
 
-        return { close() { el.classList.remove('is-open'); }, ready() { el.classList.add('ready'); } };
+        return {
+            close() { el.classList.remove('is-open'); },
+            ready() { el.classList.add('ready'); },
+            copyValue
+        };
+    })();
+
+    /* ==========================================================================
+       PROFILE (mobile home)
+       --------------------------------------------------------------------------
+       First section in the tab sequence. Photo stack toggles between a
+       clustered fan (with organic sway) and a flat expanded row; both states
+       are pure CSS, so this module only flips a class. The clock ticks on a
+       plain interval aligned to the next minute boundary — it re-renders at
+       most once a minute, not once a second, since the display has no seconds.
+       ========================================================================== */
+    const Profile = (() => {
+        const home = document.getElementById('home');
+        const stack = document.getElementById('profile-stack');
+        const bio = document.getElementById('profile-bio');
+        const timeEl = document.getElementById('clock-time');
+
+        /* Bio built as nodes rather than innerHTML so the link text can carry
+           real listeners without re-parsing markup. */
+        function buildBio() {
+            const link = (key) => {
+                const cfg = PROFILE_LINKS[key];
+                const s = document.createElement('span');
+                s.className = 'profile-link';
+                s.textContent = cfg.name;
+                s.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    Contact.copyValue(cfg.url, s);
+                    showMobileCopied(s);
+                });
+                return s;
+            };
+            bio.textContent = '';
+            bio.append(
+                'Hey, I\u2019m a Creative Technologist\nbased in Nairobi, Kenya.\n\nCreative Director at ',
+                link('naivaa'),
+                '\nCurrently building ',
+                link('ati'),
+                '\nDesigner, artist, and retired Professional Futsal Player\n(Don\u2019t fact-check this, just trust me.)\n\nI design stuff I wanna see in the world :)'
+            );
+        }
+
+        function buildStack() {
+            /* Back-to-front in DOM order so nth-child z-index in CSS reads
+               naturally: photo 3 (the portrait) sits on top when clustered. */
+            [PROFILE_PHOTOS[1], PROFILE_PHOTOS[2], PROFILE_PHOTOS[0]].forEach(src => {
+                const card = document.createElement('div');
+                card.className = 'profile-photo';
+                const inner = document.createElement('div');
+                inner.className = 'profile-photo-inner';
+                const img = document.createElement('img');
+                img.src = src;
+                img.alt = '';
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                inner.appendChild(img);
+                card.appendChild(inner);
+                stack.appendChild(card);
+            });
+        }
+
+        function toggleStack() {
+            const expanded = stack.classList.contains('is-expanded');
+            stack.classList.toggle('is-expanded', !expanded);
+            stack.classList.toggle('is-clustered', expanded);
+            stack.setAttribute('aria-label', expanded ? 'Expand photos' : 'Collapse photos');
+        }
+        stack.addEventListener('click', toggleStack);
+        stack.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleStack(); }
+        });
+
+        /* ---- clock ---- */
+        let clockTimer = null;
+        function renderClock() {
+            const now = new Date();
+            let h = now.getHours();
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const suffix = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            timeEl.textContent = `${h}:${m} ${suffix}`;
+        }
+        function startClock() {
+            renderClock();
+            clearTimeout(clockTimer);
+            /* Align the first tick to the next minute boundary, then run on a
+               steady minute interval — no per-second work for a display that
+               only shows minutes. */
+            const msToNextMinute = 60000 - (Date.now() % 60000);
+            clockTimer = setTimeout(function tick() {
+                renderClock();
+                clockTimer = setTimeout(tick, 60000);
+            }, msToNextMinute);
+        }
+
+        function setSection(section) {
+            home.dataset.section = section;
+            /* Re-measure on entering the projects section. The panels now
+               keep real layout boxes in both states, but re-running layout
+               here guarantees slideW reflects the current viewport before
+               any jump is computed against it. */
+            if (section === 'projects') Carousel.layout();
+            /* Always return to the clustered state when leaving, so coming
+               back to Profile is a consistent starting point. */
+            if (section !== 'profile') {
+                stack.classList.remove('is-expanded');
+                stack.classList.add('is-clustered');
+            }
+        }
+
+        buildBio();
+        buildStack();
+        startClock();
+
+        return { setSection };
     })();
 
     /* ==========================================================================
        PROJECT TAB
        --------------------------------------------------------------------------
        The indicator moves slot-to-slot on a plain CSS transition — constant,
-       predictable speed regardless of how far the jump is. The icons themselves
-       never change colour; only the capsule pill indicates which project is
-       active.
+       predictable speed regardless of how far the jump is. The active icon
+       turns white; the capsule pill underneath also marks the active project.
        ========================================================================== */
     const Tab = (() => {
         const bar = document.getElementById('tabbar');
@@ -2129,7 +3165,13 @@ function initMobile() {
             b.setAttribute('aria-label', p.name);
             b.setAttribute('aria-selected', 'false');
             b.innerHTML = ICONS[p.key];
-            b.addEventListener('click', () => { if (!dragMoved) Carousel.jumpToProject(i); });
+            b.addEventListener('click', () => {
+                if (dragMoved) return;
+                /* Profile has no cards, so it can't be reached through the
+                   carousel — activate it directly. */
+                if (p.isProfile) setActive(i, false);
+                else Carousel.jumpToProject(i);
+            });
             bar.appendChild(b);
             btns.push(b);
         });
@@ -2144,6 +3186,10 @@ function initMobile() {
             if (instant) indicator.style.transition = 'none';
             indicator.style.transform = `translateX(${xFor(i)}px)`;
             if (instant) requestAnimationFrame(() => { indicator.style.transition = ''; });
+            /* Section swap rides the same call that moves the highlight and
+               recolours the icon, so the three stay in step instead of racing
+               each other from separate triggers. */
+            Profile.setSection(PROJECTS[i].isProfile ? 'profile' : 'projects');
         }
 
         function morph() {
@@ -2155,7 +3201,7 @@ function initMobile() {
                the indicator sat at its raw default CSS position (missing the
                bar's own internal padding) while the bar and icons were
                already fully visible, then visibly snapped once reveal() ran.
-               The carousel always opens on project 0 (Naivaa) — that's known
+               Index 0 is Profile, which is also where the page opens — known
                up front, not something that needs to wait for reveal()'s own
                (unrelated) pacing to confirm. */
             setActive(0, true);
@@ -2329,7 +3375,11 @@ function initMobile() {
             if (revealed) return;
             revealed = true;
             const c = CARDS[active];
-            Tab.setActive(activeProject, true);
+            /* The page opens on Profile, not on a project — so seed the tab
+               there rather than at the carousel's own starting card. The
+               carousel below still primes its meta/name state, so it's fully
+               ready the instant a project icon is tapped. */
+            Tab.setActive(0, true);
             setName(PROJECTS[activeProject].name, true);
             collectionEl.textContent = c.collection;
             descEl.textContent = c.desc;
@@ -2761,7 +3811,29 @@ function initMobile() {
             running = false;
             clearTimeout(welcomeTimeout);
             welcomeEl.style.opacity = '0';
-            cards.forEach(rec => { if (!rec.video.paused) pauseCard(rec); });
+            cards.forEach(rec => {
+                if (!rec.video.paused) pauseCard(rec);
+                /* #gallery only ever fades via the page-level opacity
+                   transition — it never leaves display:block as a section, so
+                   without this, any card that had scrolled into view during
+                   the visit stayed display:block (and, via .gallery-card's
+                   standing will-change:transform,opacity, stayed promoted to
+                   its own GPU compositing layer) for the rest of the session —
+                   sitting invisibly underneath Home and continuing to cost
+                   compositor bandwidth on every subsequent scroll/touch. That
+                   ongoing cost, not anything actually wrong with Home's own
+                   carousel code, is what degraded its responsiveness after a
+                   single Gallery visit. enter() already rebuilds visible cards
+                   from scratch via its own synchronous positionCards() call,
+                   so resetting everything here is safe. */
+                rec.wrapper.style.display = 'none';
+                rec.display = 'none';
+                rec.transform = null;
+                /* A played video was upgraded to preload:'auto' for instant
+                   resume within the session — release that buffered data once
+                   the session (this Gallery visit) is over. */
+                if (rec.video.preload === 'auto') rec.video.preload = 'metadata';
+            });
         }
 
         function layout() {
@@ -2826,7 +3898,7 @@ function initMobile() {
 
 }
 
-async function initDesktop() {
+async function initDesktop(Homepage) {
     function loadScript(src) {
         return new Promise((resolve, reject) => {
             const s = document.createElement('script');
@@ -4681,6 +5753,7 @@ async function initDesktop() {
         uniform float uTimeline; uniform float uShellRadius; uniform float uMirrorProgress;
         uniform float uBurnProgress; uniform float uClearProgress; uniform float uAspect;
         uniform float uForceField; uniform float uBreathIntensity; uniform float uParticleSize;
+        uniform float uConverge;
         attribute float pRandomPhase; attribute float aType; attribute vec3 aDrift; attribute float aColorType;
         varying float vGlowIntensity; varying float vAlpha; varying float vType; varying float vColorType; varying float vColorMix;
         float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -4762,6 +5835,25 @@ async function initDesktop() {
             }
 
             baselinePosition += displacement;
+
+            /* ENTRANCE — particles converge inward to form the sphere.
+               uConverge runs 1 -> 0 once on entry. Each particle gets its own
+               scatter direction and distance from its existing random-phase
+               attribute, so they arrive from genuinely different points rather
+               than radially. This is applied last, purely additively: at
+               uConverge == 0 every term below vanishes and the resulting
+               position is identical to what it was before this existed, so the
+               settled orb and all subsequent behaviour are untouched. */
+            if (uConverge > 0.0) {
+                float sc = uConverge * uConverge;   // ease-in: most travel happens early
+                vec3 scatterDir = normalize(vec3(
+                    sin(pRandomPhase * 12.9898) ,
+                    sin(pRandomPhase * 78.233 + 1.7),
+                    sin(pRandomPhase * 37.719 + 3.3)
+                ) + surfaceNormal * 0.35);
+                float dist = 9.0 + pRandomPhase * 11.0;
+                baselinePosition += scatterDir * dist * sc;
+            }
 
             vec4 viewSpacePosition = modelViewMatrix * vec4(baselinePosition, 1.0);
             gl_Position = projectionMatrix * viewSpacePosition;
@@ -4857,7 +5949,10 @@ async function initDesktop() {
             uAspect: { value: V.aspect },
             uForceField: { value: 0 },
             uBreathIntensity: { value: 0.035 },
-            uParticleSize: { value: 28.98 }
+            uParticleSize: { value: 28.98 },
+            /* 0 = settled. The entrance sets it to 1 and animates back down;
+               left at 0 the shader's converge term is inert. */
+            uConverge: { value: 0 }
         },
         transparent: true,
         depthWrite: false
@@ -5158,6 +6253,9 @@ async function initDesktop() {
        independent clocks at non-harmonic rates produce visible beat-frequency
        jitter during the exact window the user is forming their first impression. */
     let bootFade = { active: false, t: 0, duration: 1.5 };
+    /* Entrance convergence clock — see frameScene1. Longer than bootFade so
+       the particles are still arriving as they finish fading in. */
+    let converge = { active: false, t: 0, duration: 2.6 };
 
     /* ---- typewriter ---- */
     const homeBtn = document.getElementById('home-btn');
@@ -5234,21 +6332,15 @@ async function initDesktop() {
     }
 
     homeBtn.addEventListener('click', () => {
-        /* Invalidate any in-flight transition so its deferred callbacks cannot
-           re-assert carousel state over this deliberate return to the orb. */
-        beginTransition();
-        VirtualScroll.raw = 0;
-        targetScrollProgress = 0;
-        targetRotation = 0;
+        /* Home is the Profile page now, not the top of the orb scene. The Vault
+           is still wound back underneath so the next entry replays the full
+           arrival rather than dropping the visitor mid-scroll. */
+        returningToHomepage = true;
         isDragging = false;
-        transitionState = 'IDLE';
-        pendingFolder = null;
-        hasSwiped = false;
-        scrollText.style.opacity = 1;
-        swipeText.style.opacity = 0;
-        welcomeTitle.style.opacity = 1;
-        wasScrolled = false;
-        startTypewriter();
+        beginTransition();
+        if (Router.scene !== 1) returnToSceneOne();
+        else resetVaultToOrb();
+        Homepage.show();
     });
 
     /* ---- Scene 1 frame ---- */
@@ -5300,6 +6392,20 @@ async function initDesktop() {
             bootFade.t = Math.min(1, bootFade.t + dt / bootFade.duration);
             clusterMaterial.uniforms.uGlobalAlpha.value = smoothstep(0, 1, bootFade.t);
             if (bootFade.t >= 1) bootFade.active = false;
+        }
+
+        /* Converge entrance — particles fly in and form the sphere. Runs on
+           its own slightly longer clock than bootFade so the particles are
+           still visibly settling as they finish fading in, then holds at 0
+           forever after (the shader term is inert at 0). */
+        if (converge.active) {
+            converge.t = Math.min(1, converge.t + dt / converge.duration);
+            const eased = 1 - Math.pow(1 - converge.t, 3);   // ease-out cubic
+            clusterMaterial.uniforms.uConverge.value = 1 - eased;
+            if (converge.t >= 1) {
+                clusterMaterial.uniforms.uConverge.value = 0;
+                converge.active = false;
+            }
         }
 
         currentForceField = THREE.MathUtils.lerp(currentForceField, Router.forceField, 0.05);
@@ -7056,6 +8162,55 @@ async function initDesktop() {
         welcomeTitle.style.opacity = 0;
     }
 
+    /* The mirror of restoreCarouselState: wind Scene 1 all the way back to its
+       pre-entrance state so the next "Enter The Vault" replays the full arrival
+       instead of resuming wherever the visitor happened to leave off. */
+    function resetVaultToOrb() {
+        entranceToken++;   /* cancel any entrance timers still in flight */
+
+        VirtualScroll.max = V.height * 1.5;
+        VirtualScroll.raw = 0;
+
+        targetScrollProgress = 0;
+        displayScrollProgress = 0;
+        lastCarouselEntrance = 0;
+
+        entranceState.posY = Scene1Layout.entranceY;
+        entranceState.targetY = Scene1Layout.entranceY;
+        entranceState.velY = 0;
+        carouselGroup.position.y = Scene1Layout.entranceY;
+
+        isSystemLocked = true;
+        wasScrolled = false;
+        hasSwiped = false;
+        isDragging = false;
+        transitionState = 'IDLE';
+        pendingFolder = null;
+
+        targetRotation = 0;
+        currentRotation = 0;
+
+        clusterMaterial.uniforms.uBurnProgress.value = 0;
+        clusterMaterial.uniforms.uClearProgress.value = 0;
+        Router.forceField = 0;
+        currentForceField = 0;
+
+        clearTimeout(typeTimeout);
+        welcomeTitle.textContent = '';
+        welcomeTitle.style.opacity = 0;
+        scrollText.style.opacity = 0;
+        swipeText.style.opacity = 0;
+    }
+
+    /* Which of the two states returnToSceneOne restores depends on WHY we're
+       leaving: Back means "return to the folder carousel", Home means "return
+       to Profile, with the Vault reset behind it". */
+    let returningToHomepage = false;
+    function restoreVaultState() {
+        if (returningToHomepage) resetVaultToOrb();
+        else restoreCarouselState();
+    }
+
     function returnToSceneOne() {
         const tid = beginTransition();
         const wasScene3 = Router.scene === 3;
@@ -7073,7 +8228,7 @@ async function initDesktop() {
         backBtn2.classList.remove('active');
         backBtn3.classList.remove('active');
 
-        restoreCarouselState();
+        restoreVaultState();
         Governor.refresh('scene1');
 
         setTimeout(() => {
@@ -7086,7 +8241,7 @@ async function initDesktop() {
             sceneOneEl.style.pointerEvents = 'auto';
             /* Re-assert: the 800ms fade is long enough for a resize to have
                recomputed the entrance geometry from stale values. */
-            restoreCarouselState();
+            restoreVaultState();
             setTimeout(() => {
                 if (!isCurrentTransition(tid)) return;
                 Router.forceField = 0;
@@ -7095,13 +8250,17 @@ async function initDesktop() {
         }, 800);
     }
 
-    backBtn2.addEventListener('click', returnToSceneOne);
-    backBtn3.addEventListener('click', returnToSceneOne);
+    /* Which of the two states we're headed to depends on why we're leaving:
+       Back means "return to the folder carousel", Home means "return to
+       Profile with the Vault reset behind it" (see restoreVaultState above). */
+    function backToVault() { returningToHomepage = false; returnToSceneOne(); }
+    backBtn2.addEventListener('click', backToVault);
+    backBtn3.addEventListener('click', backToVault);
 
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
         if (Router.scene === 2 && S2.activeCluster !== -1) S2.close();
-        else if (Router.scene !== 1) returnToSceneOne();
+        else if (Router.scene !== 1) backToVault();
     });
 
     /* ==========================================================================
@@ -7398,11 +8557,9 @@ async function initDesktop() {
     renderer.compile(carouselScene, carouselCam);
     Loop.start();
 
-    setTimeout(() => { bootFade.active = true; bootFade.t = 0; }, 100);
-
-    /* Staged background preparation. Nothing here competes with scene 1's boot
-       (PMREM, shader compile, first paint), which is the window the startup
-       stutters used to live in.
+    /* Background asset preparation starts immediately — it's entirely
+       invisible, and the time the visitor spends on the homepage is free
+       head start for it.
 
          1.5s  cover images for the folder carousel
          3.0s  mind-map network warm (batched), then transcode in the background
@@ -7417,19 +8574,63 @@ async function initDesktop() {
         }, 1500);
     }, 1500);
 
-    setTimeout(() => {
-        homeBtn.style.opacity = 1;
-        homeBtn.style.pointerEvents = 'auto';
-        contactBtn.style.opacity = 1;
-        contactBtn.style.pointerEvents = 'auto';
-        if (VirtualScroll.raw === 0) scrollText.style.opacity = 1;
+    /* The Vault's arrival sequence. Runs on EVERY entry from the Profile page,
+       not just the first — the token invalidates timers still pending from a
+       previous run so two entrances can't interleave and double-fire the
+       typewriter. Choreography and timings are unchanged. */
+    let entranceToken = 0;
+    function startVaultEntrance() {
+        const tok = ++entranceToken;
+
+        converge.active = true; converge.t = 0;
+        clusterMaterial.uniforms.uConverge.value = 1;
+        /* Restart the fade from nothing too, so the particles genuinely ARRIVE
+           rather than cross-fading over an orb that's already sitting there. */
+        bootFade.active = false;
+        clusterMaterial.uniforms.uGlobalAlpha.value = 0;
+
         setTimeout(() => {
-            if (VirtualScroll.raw === 0) {
-                welcomeTitle.style.opacity = 1;
-                startTypewriter();
-            }
-        }, 800);
-    }, 560);
+            if (tok !== entranceToken) return;
+            bootFade.active = true; bootFade.t = 0;
+        }, 100);
+
+        setTimeout(() => {
+            if (tok !== entranceToken) return;
+            homeBtn.style.opacity = 1;
+            homeBtn.style.pointerEvents = 'auto';
+            contactBtn.style.opacity = 1;
+            contactBtn.style.pointerEvents = 'auto';
+            if (VirtualScroll.raw === 0) scrollText.style.opacity = 1;
+            setTimeout(() => {
+                if (tok !== entranceToken) return;
+                if (VirtualScroll.raw === 0) {
+                    welcomeTitle.style.opacity = 1;
+                    startTypewriter();
+                }
+            }, 800);
+        }, 560);
+    }
+
+    /* Hands the Vault's entrance off to the Homepage, which cannot call these
+       functions directly (they live in this scope, gated behind the GSAP/
+       THREE.js CDN awaits at the top of initDesktop). If "Enter The Vault"
+       was already clicked while this was still loading, the queued click
+       fires immediately. */
+    VaultBridge.markReady(() => {
+        resetVaultToOrb();
+        startVaultEntrance();
+    });
+
+    /* ==========================================================================
+       11c. HOMEPAGE (desktop)
+       --------------------------------------------------------------------------
+       Moved to a standalone top-level function (initDesktopHomepage, defined
+       near the top of this module) so it renders and is fully interactive
+       immediately — independent of the GSAP/THREE.js CDN awaits and the large
+       WebGL/particle setup below. It's constructed once before initDesktop()
+       is even called; see the Homepage parameter and VaultBridge.markReady()
+       further down for how "Enter The Vault" hands off into this scene.
+       ========================================================================== */
 
     /* ==========================================================================
        12. PAGE LIFECYCLE  (FIX 1)
@@ -7493,7 +8694,10 @@ const __isMobile = document.documentElement.dataset.exp === 'mobile';
 if (__isMobile) {
     initMobile();
 } else {
-    initDesktop();
+    /* Built first, synchronously, so the Profile page is on screen and fully
+       interactive before initDesktop's CDN-dependent Vault setup even starts. */
+    const Homepage = initDesktopHomepage();
+    initDesktop(Homepage);
 }
 </script>
 </body>
