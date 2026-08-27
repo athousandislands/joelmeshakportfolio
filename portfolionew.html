@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title>Joel Meshak</title>
     <meta name="description" content="Joel Meshak's portfolio.">
 
@@ -64,6 +64,19 @@
             --vw: 1vw;
             --app-h: calc(var(--vh) * 100);
             --app-w: calc(var(--vw) * 100);
+
+            /* Single shared token for INTERACTIVE CONTROL text and icons on
+               both platforms — desktop nav buttons (Joel Meshak, Enter The
+               Vault, Contact and its items) and the mobile nav pair.
+               #595959 is the round-30 value: #777777 -> #686868 (-12.5%) ->
+               #595959 (a further -14%), so desktop and mobile controls now
+               share one gray end to end.
+
+               Deliberately NOT applied to descriptive typography: the link
+               preview URL, scroll/swipe hints, collection descriptions, the
+               WebGL recovery notice and every white/grey body style keep
+               their existing values, so only controls shift. */
+            --ui-grey: #595959;
         }
 
         html, body {
@@ -152,10 +165,10 @@
             -webkit-backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 50px;
-            font-weight: 500; font-size: 14px; color: #777777;
+            font-weight: 500; font-size: 14px; color: var(--ui-grey);
             cursor: pointer;
             box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 4px 13px rgba(0, 0, 0, 0.0214);
-            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.8s ease;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.55s ease;
             z-index: 200; user-select: none; letter-spacing: 0.5px;
             display: flex; align-items: center; gap: 8px;
             --x: 50%; --y: 50%;
@@ -571,6 +584,50 @@
         }
         #hp-enter-btn:hover { transform: translateX(-50%) translateY(-1px); }
 
+        /* ==========================================================================
+           HOMEPAGE ARRIVAL (desktop)
+           --------------------------------------------------------------------------
+           Four stages, in the order the eye should read the page: the three
+           corner/edge buttons land, the photo tiles arrive and settle, then the
+           bio resolves in. Each element carries a resting state and a start
+           state; a stage class flips it and the element's own easing carries it
+           home, so there is one deceleration curve across the whole page.
+
+           Staged by CLASSES from runArrival(), deliberately not by CSS
+           transition-delay: a delay on #hp-contact-btn would persist for the
+           life of the page and hold back its own hover-open morph by the same
+           amount. Classes leave nothing behind once the stage has passed.
+
+           Movement is small on purpose — 9-20px and a sub-2% scale. The intent
+           is weight and intent, not a visible animation. */
+        #homepage:not(.arr-btns) #hp-name-btn { opacity: 0; transform: translateY(-9px); }
+        #homepage:not(.arr-btns) #hp-contact-btn { transform: translateY(-9px); }
+        #homepage:not(.arr-btns) #hp-enter-btn { opacity: 0; transform: translateX(-50%) translateY(11px); }
+        /* Beats the shared #contact-btn opacity:0 on specificity (2 ids + class
+           against 1 id) without needing !important. */
+        #homepage.arr-btns #hp-contact-btn { opacity: 1; }
+
+        /* The stack settles as one body while the three cards resolve in
+           back-to-front. The per-card entrance animates ONLY opacity, so it
+           can never fight the fan/expand transform each card already carries
+           or the sway running on its inner wrapper. */
+        #hp-stack { transform: translateY(18px); transition: transform 0.66s cubic-bezier(0.16, 1, 0.3, 1); }
+        #homepage.arr-tiles #hp-stack { transform: translateY(0); }
+        .hp-photo { opacity: 0; }
+        #homepage.arr-tiles .hp-photo { animation: tileArrive 0.48s ease forwards; }
+        #homepage.arr-tiles .hp-photo:nth-child(3) { animation-delay: 0s; }
+        #homepage.arr-tiles .hp-photo:nth-child(2) { animation-delay: 0.10s; }
+        #homepage.arr-tiles .hp-photo:nth-child(1) { animation-delay: 0.20s; }
+        @keyframes tileArrive { from { opacity: 0; } to { opacity: 1; } }
+
+        #hp-bio {
+            opacity: 0;
+            transform: scale(0.984);
+            transform-origin: left center;
+            transition: opacity 0.62s ease, transform 0.78s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #homepage.arr-bio #hp-bio { opacity: 1; transform: scale(1); }
+
         /* Static link preview — favicon-equivalent glyph, site name, URL. No
            iframe and no network request: the target sites are never contacted,
            so this costs nothing and can't leak the visitor's browsing. Same
@@ -637,9 +694,11 @@
         }
 
         /* The shared #contact-btn rule below starts hidden because the Vault
-           reveals it during its boot sequence. The homepage copy has no such
-           sequence, so it's visible immediately. */
-        #hp-contact-btn { opacity: 1 !important; pointer-events: auto !important; }
+           reveals it during its boot sequence. The homepage has no such
+           sequence — its own arrival stage reveals it instead (see HOMEPAGE
+           ARRIVAL below). Only pointer-events is forced now; opacity is the
+           arrival's to own. */
+        #hp-contact-btn { pointer-events: auto !important; }
 
         #contact-btn,
         #hp-contact-btn {
@@ -708,7 +767,7 @@
             gap: 12px;
             padding: 10px 14px;
             border-radius: 14px;
-            color: #777777;
+            color: var(--ui-grey);
             font-size: 15px;
             font-weight: 400;
             cursor: pointer;
@@ -1010,6 +1069,11 @@
             .hp-photo-inner,
             #mindmap-interact-text.fade-in { animation: none !important; }
             .welcome-text::after { animation: none; }
+            /* runArrival() also applies every stage at once under reduced
+               motion, so nothing here is ever left waiting on a timer. */
+            #hp-name-btn, #hp-contact-btn, #hp-enter-btn,
+            #hp-stack, #hp-bio { transition: none !important; }
+            .hp-photo { animation: none !important; opacity: 1 !important; }
         }
         /* ==========================================================================
            MOBILE STYLESHEET — round 5
@@ -1075,7 +1139,11 @@
            being nudged individually. */
         #mobile-root {
             --app-mh: calc(var(--mvh) * 100);
-            --tabbar-h: clamp(44px, calc(var(--app-mh) * 0.068), 52px);
+            /* Round 30: whole nav row taken down ~12% — it read as too
+               visually dominant at the old size. Every dependent measure
+               (panel-top, the round Profile button, the indicator) is derived
+               from this, so they all compact together. */
+            --tabbar-h: clamp(39px, calc(var(--app-mh) * 0.060), 46px);
             --tab-gap-top: clamp(12px, calc(var(--app-mh) * 0.032), 28px);
             --tab-gap-bottom: clamp(10px, calc(var(--app-mh) * 0.024), 22px);
             /* Panels always start BELOW the bar. Previously they started
@@ -1204,14 +1272,16 @@
             font-size: 13.5px;
             font-weight: 500;
             letter-spacing: 0.1px;
-            color: var(--ink);
+            color: var(--ui-grey);
             padding: 0 15px;
             height: 100%;
             border-radius: 999px;
             cursor: pointer;
             transition: color 0.28s ease;
         }
-        #mobile-root .switch-btn[aria-selected="true"] { color: var(--on-glass); }
+        /* No selected-state recolour: Home/Gallery hold one gray in every
+           state and the sliding capsule thumb underneath is the affordance,
+           matching how the project tab icons already work. */
         #mobile-root .switch-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
         /* ---- Contact ---- */
@@ -1260,7 +1330,7 @@
             justify-content: center;
             font-size: 13.5px;
             font-weight: 500;
-            color: var(--ink);
+            color: var(--ui-grey);
             transition: opacity 0.2s ease;
         }
         #mobile-root #contact.is-open #contact-label { opacity: 0; }
@@ -1284,7 +1354,7 @@
             gap: 12px;
             padding: 9px 12px;
             border-radius: 12px;
-            color: var(--ink);
+            color: var(--ui-grey);
             font-size: 14px;
             white-space: nowrap;
             opacity: 0;
@@ -1327,7 +1397,7 @@
             cursor: pointer;
             font-size: 13.5px;
             font-weight: 500;
-            color: var(--ink);
+            color: var(--ui-grey);
             opacity: 0;
             pointer-events: none;
             transform: translateY(-6px);
@@ -1337,6 +1407,10 @@
             opacity: 1;
             pointer-events: auto;
             transform: translateY(0);
+            /* Delay lives only on the arriving state, so leaving Gallery
+               still uses the undelayed base rule and the button clears
+               immediately on the way out. */
+            transition-delay: 0.16s;
         }
         #mobile-root #back-btn svg {
             width: 15px; height: 15px;
@@ -1381,6 +1455,20 @@
             padding-top: calc(var(--header-h) + env(safe-area-inset-top, 0px));
         }
 
+        /* Round 30: reverted from real glass (backdrop-filter) back to the
+           project's standard fake-glass .glass class, which both nav controls
+           now share with every other mobile surface. The blur was buying
+           nothing visually — this row sits above --panel-top, so only flat
+           background ever passes beneath it — while costing a real backdrop
+           repaint on every frame of the width morph. Sizing, positioning,
+           colours and the .glass gradient sheen are all untouched; only the
+           material changed. */
+
+        /* The two nav controls sit in one centred row. Centring is what makes
+           the morph read as a single object: #tabbar's width is the ONLY
+           animated length, and flex centring slides #nav-profile-btn left by
+           exactly half the growth, on the same frames and the same easing,
+           with nothing to keep in sync in JS. */
         #mobile-root #tabslot {
             position: relative;
             width: 100%;
@@ -1389,22 +1477,120 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            gap: 9px;
             margin-top: var(--tab-gap-top);
             z-index: 10;
         }
 
+        #mobile-root #nav-profile-btn {
+            flex: 0 0 auto;
+            width: var(--tabbar-h);
+            height: var(--tabbar-h);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--ui-grey);
+            cursor: pointer;
+            opacity: 0;
+            transform: scale(0.92);
+            transition: opacity 0.5s ease, transform 0.5s var(--ease-out);
+            -webkit-tap-highlight-color: transparent;
+        }
+        #mobile-root #nav-profile-btn.in { opacity: 1; transform: scale(1); }
+        #mobile-root #nav-profile-btn:active { transform: scale(0.94); }
+        #mobile-root #nav-profile-btn:focus-visible { outline: 2px solid var(--ui-grey); outline-offset: 2px; }
+        /* Same optical correction the icon already had as a tab: this glyph
+           fills its own viewBox more than the others, so it needs less box. */
+        #mobile-root #nav-profile-btn svg { width: 17px; height: 17px; fill: currentColor; }
+
+        /* #tabbar IS the morph. Collapsed it is a "Projects" pill; expanded it
+           is the project tab bar it has always been. The icons are laid out
+           at full width in BOTH states — overflow:hidden is what hides them,
+           not a layout change — so btns[i].offsetLeft stays valid while
+           collapsed and the indicator never needs re-measuring after the
+           transition. Width is the single animated property. */
         #mobile-root #tabbar {
             position: relative;
             display: flex;
             align-items: center;
-            gap: 2px;
             height: var(--tabbar-h);
             padding: 5px;
             border-radius: 999px;
+            overflow: hidden;
+            flex: 0 0 auto;
+            /* Both widths are measured from real layout in Tab.measure();
+               these fallbacks only cover the frames before it first runs,
+               while the bar is still at opacity 0. */
+            width: var(--tabbar-w-closed, 122px);
+            cursor: pointer;
             opacity: 0;
             transform: scale(0.92);
             touch-action: pan-x;
-            transition: opacity 0.5s ease, transform 0.5s var(--ease-out);
+            transition: opacity 0.5s ease,
+                        transform 0.5s var(--ease-out),
+                        width 0.58s var(--ease-out);
+            -webkit-tap-highlight-color: transparent;
+        }
+        #mobile-root #home[data-section="projects"] #tabbar {
+            width: var(--tabbar-w-open, 240px);
+            cursor: default;
+        }
+        #mobile-root #tabbar:focus-visible { outline: 2px solid var(--ui-grey); outline-offset: 2px; }
+
+        /* Label and icon group cross-fade against each other, offset so the
+           outgoing one is gone before the incoming one arrives — otherwise
+           they overlap visibly in the middle of the width transition. */
+        #mobile-root #projects-label {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.4px;
+            color: var(--ui-grey);
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 2;
+            opacity: 1;
+            transition: opacity 0.24s ease 0.12s;
+        }
+        #mobile-root #home[data-section="projects"] #projects-label {
+            opacity: 0;
+            transition: opacity 0.16s ease 0s;
+        }
+
+        /* Gates the whole icon group's visibility in one place, so the
+           per-button iconLand entrance animation is left completely
+           untouched — an animation would otherwise win the cascade over any
+           opacity rule put on .tab-btn directly.
+           Not position:relative: z-index applies to flex items regardless,
+           and making it a positioned box would move the buttons' offsetParent
+           off #tabbar and break the indicator's offsetLeft maths. */
+        #mobile-root #tab-icons {
+            /* MUST stay unpositioned. .glass > * sets position:relative on
+               every direct child, which would move the tab buttons'
+               offsetParent off #tabbar and silently drop the bar's 5px
+               padding out of every offsetLeft the indicator and
+               Tab.measure() read. z-index works on a flex item regardless
+               of position, so nothing is lost by forcing static here. */
+            position: static;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            height: 100%;
+            flex: 0 0 auto;
+            z-index: 2;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+        #mobile-root #home[data-section="projects"] #tab-icons {
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0.3s ease 0.16s;
         }
         #mobile-root #tabbar.in { opacity: 1; transform: scale(1); }
 
@@ -1417,7 +1603,9 @@
             opacity: 0;
             transition: transform 0.3s var(--ease-out), opacity 0.3s ease, width 0.2s ease;
         }
-        #mobile-root #tabbar.in #tab-indicator { opacity: 1; }
+        /* The capsule only exists in the expanded state — while collapsed it
+           would read as a grey blob sitting behind the "Projects" label. */
+        #mobile-root #home[data-section="projects"] #tabbar.in #tab-indicator { opacity: 1; }
         #mobile-root #tabbar.dragging #tab-indicator { transition: none; }
 
         #mobile-root .tab-btn {
@@ -1427,13 +1615,17 @@
             border: 0;
             background: none;
             padding: 0;
-            width: 56px;
+            width: 50px;
+            /* Must not shrink: the bar is a fixed-width flex container while
+               collapsed, and a squashed button would corrupt the offsetLeft
+               values the indicator and the width measurement both read. */
+            flex: 0 0 50px;
             height: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            color: var(--ink);
+            color: var(--ui-grey);
             opacity: 0;
             transform: translateY(-8px) scale(0.82);
         }
@@ -1444,16 +1636,18 @@
         }
         /* No colour transition: the icons never change colour, so there is
            nothing to animate. */
-        #mobile-root .tab-btn svg { width: 24px; height: 24px; fill: currentColor; }
+        #mobile-root .tab-btn svg { width: 21px; height: 21px; fill: currentColor; }
         /* Optical correction: Naivaa's and A Thousand Islands' source artwork
            carries more internal padding relative to its own viewBox, so at
            identical box sizes they read visibly smaller than the other glyphs.
            Profile's glyph is the opposite — it fills its box, so it needs less. */
         #mobile-root .tab-btn.icon-naivaa svg,
-        #mobile-root .tab-btn.icon-a-thousand-islands svg { width: 32px; height: 32px; }
-        #mobile-root .tab-btn.icon-profile svg { width: 19px; height: 19px; }
-        /* Icons stay at their native dark-grey (var(--ink)) in every state —
-           there is deliberately NO aria-selected colour rule. The only visual
+        #mobile-root .tab-btn.icon-a-thousand-islands svg { width: 28px; height: 28px; }
+        #mobile-root .tab-btn.icon-profile svg { width: 17px; height: 17px; }
+        /* Icons stay at one flat colour in every state — now the shared
+           var(--ui-grey) that the desktop controls use, so the two
+           platforms' UI reads as one system. There is still deliberately
+           NO aria-selected colour rule. The only visual
            change on navigation is the highlight indicator sliding between
            icons; a per-icon colour swap has to keep up with rapid state
            changes and read as broken/laggy when it doesn't. */
@@ -1500,7 +1694,7 @@
             opacity: 0;
             pointer-events: none;
         }
-        #mobile-root #profile-clock { transition: opacity 0.34s ease; }
+        #mobile-root #profile-clock { transition: opacity 0.55s ease, transform 0.6s var(--ease-out); }
 
         #mobile-root #profile-panel {
             padding: 0 26px;
@@ -1556,8 +1750,25 @@
             flex: 0 0 auto;
             cursor: pointer;
             -webkit-tap-highlight-color: transparent;
+            /* Arrival stage 2 — the stack settles as one body. Safe to put a
+               transform here: the cards are absolutely positioned against
+               this element already, so they ride it without their own fan
+               transforms being touched. */
+            transform: translateY(16px);
+            transition: transform 0.62s var(--ease-out);
         }
+        #mobile-root.arr-tiles #profile-stack { transform: translateY(0); }
+        /* Per-card entrance animates ONLY opacity. It therefore cannot fight
+           the fan/expand transform on the card or the sway animation running
+           on its inner wrapper, and animation-delay is a separate property
+           from the transition-delay the expand/collapse choreography uses. */
+        #mobile-root.arr-tiles .profile-photo { animation: tileArriveM 0.46s ease forwards; }
+        #mobile-root.arr-tiles .profile-photo:nth-child(3) { animation-delay: 0s; }
+        #mobile-root.arr-tiles .profile-photo:nth-child(2) { animation-delay: 0.09s; }
+        #mobile-root.arr-tiles .profile-photo:nth-child(1) { animation-delay: 0.18s; }
+        @keyframes tileArriveM { from { opacity: 0; } to { opacity: 1; } }
         #mobile-root .profile-photo {
+            opacity: 0;
             position: absolute;
             top: 0; left: 0;
             width: var(--pf-card);
@@ -1643,9 +1854,17 @@
             font-size: clamp(0.79rem, calc(var(--panel-h) * 0.032), 0.88rem);
             font-weight: 500;
             line-height: 1.52;
-            color: var(--ink);
+            /* Naivaa / A Thousand Islands keep their own .profile-link colour
+               rule below — only the surrounding body copy moves. */
+            color: var(--ui-grey);
             white-space: pre-line;
+            /* Arrival stage 3 — fade with a sub-2% scale-up. */
+            opacity: 0;
+            transform: scale(0.984);
+            transform-origin: left center;
+            transition: opacity 0.6s ease, transform 0.76s var(--ease-out);
         }
+        #mobile-root.arr-bio #profile-bio { opacity: 1; transform: scale(1); }
         #mobile-root .profile-link {
             color: #ffffff;
             cursor: pointer;
@@ -1697,7 +1916,14 @@
             font-weight: 500;
             color: var(--ink);
             pointer-events: none;
+            /* Arrival stage 4 — last in, once the bio has resolved. */
+            opacity: 0;
+            transform: translateY(9px);
         }
+        /* Lower specificity (2 ids + class) than the projects-section rule
+           above (3 ids + attribute), so switching to Projects still hides the
+           clock exactly as before. */
+        #mobile-root.arr-clock #profile-clock { opacity: 1; transform: translateY(0); }
         #mobile-root #clock-place { color: #ffffff; }
 
         /* ---- project name ---- */
@@ -1978,10 +2204,11 @@
            which is what degraded Home's touch responsiveness after a Gallery
            visit. Scoping it here means the promotion is dropped by CSS alone
            the moment the page changes, independent of any JS cleanup.
-           'opacity' is deliberately not hinted: it's set once when a card is
-           revealed and never animated per-frame, so hinting it would reserve
-           compositor resources for nothing. */
-        #mobile-root[data-page="gallery"] .gallery-card { will-change: transform; }
+           'opacity' IS hinted now: settle isolation (see positionCards) drives
+           it per-frame during a swipe, so the compositor genuinely needs it.
+           Still page-scoped, so the promotion is dropped the moment Gallery
+           is no longer the active page. */
+        #mobile-root[data-page="gallery"] .gallery-card { will-change: transform, opacity; }
         /* Separate inner element for the one-time entrance scale/fade, so it
            never fights the outer element's own per-frame JS transform (position/
            rotation/opacity from the scroll math) — the two layers are
@@ -1990,16 +2217,19 @@
             opacity: 1;
             transform: scale(1);
         }
+        /* Arrival: the first tile rises into the centre and settles, rather
+           than simply being there. The typewriter waits for it (see
+           GALLERY_SETTLE_MS) so the page reads as setting its stage. */
         #mobile-root .gallery-card-inner.gallery-entrance-start {
             opacity: 0;
-            transform: scale(0.92);
+            transform: translateY(18px) scale(0.94);
             transition: none;
         }
         #mobile-root .gallery-card-inner.gallery-entrance-go {
             opacity: 1;
-            transform: scale(1);
-            transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1),
-                        transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+            transform: translateY(0) scale(1);
+            transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.72s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         #mobile-root .gallery-casing {
@@ -2171,7 +2401,7 @@
                wide-short shape: landscape height is the scarce dimension, so
                the bar and its gaps take a smaller share of it and bottom out
                lower before anything is allowed to overflow. */
-            --tabbar-h: clamp(34px, calc(var(--app-mh) * 0.115), 44px);
+            --tabbar-h: clamp(30px, calc(var(--app-mh) * 0.101), 39px);
             --tab-gap-top: clamp(4px, calc(var(--app-mh) * 0.022), 10px);
             --tab-gap-bottom: clamp(4px, calc(var(--app-mh) * 0.026), 12px);
         }
@@ -2306,6 +2536,16 @@
             display: none;
         }
 
+        /* Landscape tiles at 87% of the portrait sizing. The whole min() is
+           scaled rather than any single term, so all three constraints (78vw,
+           the 420px cap, and the --app-mh height bound that keeps tile +
+           controls inside a short viewport) still apply — they just resolve
+           13% smaller. The tiles technically fitted before; this is purely
+           about them not filling the frame edge to edge. */
+        #mobile-root[data-orient="landscape"] .gallery-card {
+            width: calc(min(78vw, 420px, calc(var(--app-mh) * 1.15)) * 0.87);
+        }
+
         /* ==========================================================================
            7. REDUCED MOTION
            ========================================================================== */
@@ -2315,6 +2555,12 @@
             #mobile-root #home.arrive #carousel,
             #mobile-root #home.arrive #meta { animation: none; }
             #mobile-root .profile-photo-inner { animation: none !important; }
+            /* The mobile sequencer also applies every stage at once under
+               reduced motion, so nothing waits on a timer. */
+            #mobile-root #profile-stack,
+            #mobile-root #profile-bio,
+            #mobile-root #profile-clock { transition: none !important; transform: none !important; }
+            #mobile-root .profile-photo { animation: none !important; opacity: 1 !important; }
             #mobile-root * { scroll-behavior: auto !important; }
         }
 
@@ -2569,8 +2815,11 @@
 
     <section id="home" class="page active" data-section="profile" role="tabpanel" aria-label="Home">
         <div id="tabslot">
-            <div id="tabbar" class="glass" role="tablist" aria-label="Projects">
+            <div id="nav-profile-btn" class="glass" role="button" tabindex="0" aria-label="Profile"></div>
+            <div id="tabbar" class="glass" role="tablist" tabindex="0" aria-label="Projects">
+                <div id="projects-label"><span>Projects</span></div>
                 <div id="tab-indicator" class="capsule"></div>
+                <div id="tab-icons"></div>
             </div>
         </div>
 
@@ -2852,6 +3101,42 @@ function initDesktopHomepage() {
     }
     enterBtn.addEventListener('click', enterVault);
 
+    /* ==========================================================================
+       ARRIVAL SEQUENCER (desktop)
+       --------------------------------------------------------------------------
+       Buttons land -> tiles arrive and settle -> bio resolves. Replays on every
+       return from the Vault, matching the Vault's own entrance, which already
+       replays rather than firing once per session.
+       ========================================================================== */
+    const ARRIVE_RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const ARRIVE_STAGES = [
+        ['arr-btns', 80],
+        /* Last card's fade ends at 520+200+480 = 1200, group settle at
+           520+660 = 1180 — the bio waits for both. */
+        ['arr-tiles', 520],
+        ['arr-bio', 1240]
+    ];
+    let arrivalTimers = [];
+
+    function runArrival() {
+        arrivalTimers.forEach(clearTimeout);
+        arrivalTimers = [];
+        ARRIVE_STAGES.forEach(([cls]) => el.classList.remove(cls));
+        if (ARRIVE_RM) {
+            /* No staging when motion is reduced — everything is simply present.
+               Applied here rather than left to the timers so the page is never
+               waiting on a sequence it isn't going to show. */
+            ARRIVE_STAGES.forEach(([cls]) => el.classList.add(cls));
+            return;
+        }
+        /* Forced reflow so a replay actually restarts from the start state
+           instead of the browser coalescing remove+add into no change. */
+        void el.offsetWidth;
+        ARRIVE_STAGES.forEach(([cls, at]) => {
+            arrivalTimers.push(setTimeout(() => el.classList.add(cls), at));
+        });
+    }
+
     /* The name button returns here from anywhere in the Vault. */
     function show() {
         /* Cancel a pending hide — otherwise a fast Vault -> Home bounce
@@ -2860,7 +3145,7 @@ function initDesktopHomepage() {
         goneTimer = null;
         hideCopied();
         el.classList.remove('gone');
-        requestAnimationFrame(() => el.classList.remove('leaving'));
+        requestAnimationFrame(() => { el.classList.remove('leaving'); runArrival(); });
     }
     nameBtn.addEventListener('click', () => { /* already home */ });
 
@@ -2900,6 +3185,9 @@ function initDesktopHomepage() {
 
     buildBio();
     buildStack();
+    /* buildStack() has to have run first — the cards the tile stage reveals
+       don't exist before it. */
+    requestAnimationFrame(runArrival);
 
     return { show, enterVault };
 }
@@ -3032,6 +3320,11 @@ function initMobile() {
         const idx = CARDS.findIndex(c => c.project === pi);
         return idx === -1 ? 0 : idx;
     });
+    /* Profile keeps its slot in PROJECTS (so every index the carousel, the
+       tab bar and PROJECT_START already share stays exactly as it was) but no
+       longer gets a button inside the bar — it is the round nav button beside
+       it now. */
+    const PROFILE_TAB = PROJECTS.findIndex(p => p.isProfile);
 
     /* Home carousel's project video entries — separate from the Gallery
        page's own GALLERY_VIDEOS list below. */
@@ -3111,7 +3404,36 @@ function initMobile() {
        the same principle the desktop Viewport module applies to the WebGL
        canvases, applied here to CSS layout.
        ========================================================================== */
+    /* ---- PINCH-ZOOM GUARD ----
+       visualViewport reports the ZOOMED viewport: pinch to 2x and vv.width /
+       vv.height halve. Because --mvh/--mvw are written straight from those
+       numbers, and the entire mobile layout (--app-mh, --panel-h, card sizes,
+       the carousel's slide widths) is derived from them, a pinch used to
+       rewrite the whole layout at the zoomed scale. That is the distortion —
+       and why it did not come back on zooming out: the layout had genuinely
+       been rebuilt at the wrong size, with slideW measured against it.
+
+       This is NOT Gallery-specific. Profile/Projects runs through the exact
+       same pipeline and is equally exposed; Gallery just surfaced it first
+       because its tiles are sized off --app-mh and its tall scroll container
+       makes a stuck zoom obvious. The guard is global to the mobile app, so
+       both pages are covered.
+
+       The meta tag's user-scalable=no does NOT do this job: iOS Safari has
+       ignored user-scalable and maximum-scale since iOS 10. The gesture
+       listeners in BOOT are what actually decline the pinch there; this guard
+       is the backstop for any engine that zooms anyway, so the worst case is
+       a temporarily zoomed view that restores intact rather than a layout
+       that has to be reloaded. */
+    function isZoomed() {
+        const vv = window.visualViewport;
+        return !!vv && typeof vv.scale === 'number' && vv.scale > 1.01;
+    }
+
     function writeViewportUnits() {
+        /* Hold the last known-good units while zoomed. A resize fires again
+           on the way back to scale 1, which reinstates them. */
+        if (isZoomed()) return;
         const vv = window.visualViewport;
         const w = Math.round(vv ? vv.width : window.innerWidth);
         const h = Math.round(vv ? vv.height : window.innerHeight);
@@ -3366,6 +3688,14 @@ function initMobile() {
         }
 
         function setSection(section) {
+            /* Only ever act on a REAL section change. This is re-entered
+               during an ordinary swipe — Carousel.onScroll -> its own
+               setActive() -> Tab.setActive() -> here — and without this
+               guard the enterSection() call below would fire mid-gesture and
+               snap a live native scroll straight to a card boundary. It also
+               keeps the nav morph from restarting its transition on every
+               project the user swipes past. */
+            if (home.dataset.section === section) return;
             home.dataset.section = section;
             /* Re-measure on entering the projects section. The panels now
                keep real layout boxes in both states, but re-running layout
@@ -3388,19 +3718,58 @@ function initMobile() {
     })();
 
     /* ==========================================================================
+       NAV — the round Profile button that sits beside the morphing bar
+       --------------------------------------------------------------------------
+       Routed through Tab.setActive() rather than calling Profile.setSection()
+       directly, so this button uses the exact same single path that the tab
+       icons and the carousel already use. Tab is referenced lazily from
+       inside the handler, so declaring Nav first is safe.
+       ========================================================================== */
+    const Nav = (() => {
+        const btn = document.getElementById('nav-profile-btn');
+        btn.innerHTML = ICONS.profile;   /* same glyph the Profile tab used */
+        function go() { Tab.setActive(PROFILE_TAB, false); }
+        btn.addEventListener('click', go);
+        btn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+        });
+        return { reveal() { btn.classList.add('in'); } };
+    })();
+
+    /* ==========================================================================
        PROJECT TAB
        --------------------------------------------------------------------------
        The indicator moves slot-to-slot on a plain CSS transition — constant,
-       predictable speed regardless of how far the jump is. The active icon
-       turns white; the capsule pill underneath also marks the active project.
+       predictable speed regardless of how far the jump is. The capsule pill
+       underneath marks the active project.
+
+       The bar is also the collapsed "Projects" button (see the #tabbar CSS).
+       Its selection logic below is unchanged; the only additions are that the
+       Profile entry no longer gets a button, that the two morph widths are
+       measured, and that the drag/click handlers stand down while collapsed
+       so a tap on the pill reads as "open Projects" instead of "grab the
+       indicator".
        ========================================================================== */
     const Tab = (() => {
         const bar = document.getElementById('tabbar');
+        const iconsEl = document.getElementById('tab-icons');
+        const labelEl = document.querySelector('#projects-label span');
         const indicator = document.getElementById('tab-indicator');
+        const homeEl = document.getElementById('home');
+        /* btns stays index-aligned to PROJECTS — null in the Profile slot —
+           so every existing caller keeps passing the same indices it always
+           did. `order` is just the subset that actually has a tab, in bar
+           order, for "first project" and nearest-slot lookups. */
         const btns = [];
+        const order = [];
         let active = -1;
 
+        const collapsed = () => homeEl.dataset.section !== 'projects';
+
         PROJECTS.forEach((p, i) => {
+            /* Profile is the round button beside the bar now — it keeps its
+               PROJECTS index, but holds a null slot here. */
+            if (p.isProfile) { btns.push(null); return; }
             const b = document.createElement('button');
             b.type = 'button';
             b.className = 'tab-btn icon-' + p.key;
@@ -3410,24 +3779,50 @@ function initMobile() {
             b.innerHTML = ICONS[p.key];
             b.addEventListener('click', () => {
                 if (dragMoved) return;
-                /* Profile has no cards, so it can't be reached through the
-                   carousel — activate it directly. */
-                if (p.isProfile) setActive(i, false);
-                else Carousel.jumpToProject(i);
+                Carousel.jumpToProject(i);
             });
-            bar.appendChild(b);
+            iconsEl.appendChild(b);
             btns.push(b);
+            order.push(i);
         });
 
-        function xFor(i) { return btns[i].offsetLeft; }
-        function layout() { indicator.style.width = btns[0].offsetWidth + 'px'; if (active >= 0) indicator.style.transform = `translateX(${xFor(active)}px)`; }
+        /* The tab a given PROJECTS index should light up. Profile has none, so
+           it falls back to the first slot: the bar then always collapses from
+           — and re-expands to — the same resting position, which is also
+           where the "Projects" button sends you. */
+        function slotFor(i) { return btns[i] ? i : order[0]; }
+        function xFor(i) { const b = btns[i]; return b ? b.offsetLeft : 0; }
+
+        /* Both morph widths, measured from real layout rather than hard-coded,
+           so they stay correct if the icon count, the bar's padding or the
+           label's type metrics ever change. Safe to read while collapsed:
+           overflow:hidden clips the icons but does not move them, and
+           .tab-btn is flex: 0 0 56px so the narrow bar cannot squash them. */
+        function measure() {
+            const last = btns[order[order.length - 1]];
+            if (!last) return;
+            const padRight = parseFloat(getComputedStyle(bar).paddingRight) || 0;
+            const open = Math.round(last.offsetLeft + last.offsetWidth + padRight);
+            const closed = Math.round((labelEl ? labelEl.getBoundingClientRect().width : 60) + 46);
+            root.style.setProperty('--tabbar-w-open', open + 'px');
+            root.style.setProperty('--tabbar-w-closed', closed + 'px');
+        }
+
+        function layout() {
+            measure();
+            indicator.style.width = btns[order[0]].offsetWidth + 'px';
+            if (active >= 0) indicator.style.transform = `translateX(${xFor(slotFor(active))}px)`;
+        }
 
         function setActive(i, instant) {
             if (i < 0 || i === active) return;
             active = i;
-            btns.forEach((b, k) => b.setAttribute('aria-selected', String(k === i)));
+            btns.forEach((b, k) => { if (b) b.setAttribute('aria-selected', String(k === i)); });
             if (instant) indicator.style.transition = 'none';
-            indicator.style.transform = `translateX(${xFor(i)}px)`;
+            /* On the way to Profile the indicator glides back to the first
+               slot while the bar collapses around it, so the icons read as
+               gathering into the pill rather than the capsule vanishing. */
+            indicator.style.transform = `translateX(${xFor(slotFor(i))}px)`;
             if (instant) requestAnimationFrame(() => { indicator.style.transition = ''; });
             /* Section swap rides the same call that moves the highlight and
                recolours the icon, so the three stay in step instead of racing
@@ -3447,10 +3842,17 @@ function initMobile() {
                Index 0 is Profile, which is also where the page opens — known
                up front, not something that needs to wait for reveal()'s own
                (unrelated) pacing to confirm. */
-            setActive(0, true);
+            setActive(PROFILE_TAB, true);
             bar.classList.add('in');
+            Nav.reveal();
             setTimeout(() => {
-                btns.forEach((b, i) => { b.style.animationDelay = (i * 0.15) + 's'; });
+                /* Iterate `order`, NOT `btns` — btns carries a null in the
+                   Profile slot since Profile became the round button beside
+                   the bar. Indexing straight into btns threw here, and because
+                   the throw happened before the next line, `icons-in` was
+                   never added and every .tab-btn stayed at its opacity:0 base
+                   forever. That was the "project icons invisible" bug. */
+                order.forEach((pi, n) => { btns[pi].style.animationDelay = (n * 0.13) + 's'; });
                 bar.classList.add('icons-in');
             }, 460);
         }
@@ -3460,11 +3862,32 @@ function initMobile() {
         let dragStartX = 0;
         let dragBaseX = 0;
 
+        /* Collapsed, the whole bar is the "Projects" button. The icons inside
+           are pointer-events:none in that state, so nothing else can claim
+           the tap.
+
+           `true` = jump without the tween: the carousel is still behind the
+           Profile panel's cross-fade at this moment, so animating scrollLeft
+           would be motion nobody can see. PROJECT_START[order[0]] is the
+           first project's first card, which is exactly what the label
+           promises. */
+        function openProjects() {
+            if (dragMoved) return;
+            Carousel.jumpToProject(order[0], true);
+        }
+        bar.addEventListener('click', () => { if (collapsed()) openProjects(); });
+        bar.addEventListener('keydown', (e) => {
+            if (!collapsed()) return;
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openProjects(); }
+        });
+
         bar.addEventListener('pointerdown', (e) => {
+            /* No indicator to grab while the bar is a button. */
+            if (collapsed()) return;
             dragging = true;
             dragMoved = false;
             dragStartX = e.clientX;
-            dragBaseX = xFor(active < 0 ? 0 : active);
+            dragBaseX = xFor(slotFor(active < 0 ? order[0] : active));
             bar.classList.add('dragging');
             try { bar.setPointerCapture(e.pointerId); } catch (err) {}
         }, { passive: true });
@@ -3473,7 +3896,7 @@ function initMobile() {
             if (!dragging) return;
             const dx = e.clientX - dragStartX;
             if (Math.abs(dx) > 4) dragMoved = true;
-            const x = clamp(dragBaseX + dx, 0, xFor(btns.length - 1));
+            const x = clamp(dragBaseX + dx, xFor(order[0]), xFor(order[order.length - 1]));
             indicator.style.transform = `translateX(${x}px)`;
         }, { passive: true });
 
@@ -3483,9 +3906,9 @@ function initMobile() {
             bar.classList.remove('dragging');
             if (!dragMoved) return;
             const m = /translateX\(([-\d.]+)px\)/.exec(indicator.style.transform);
-            const x = m ? parseFloat(m[1]) : xFor(active);
-            let nearest = 0, best = Infinity;
-            btns.forEach((b, i) => { const d = Math.abs(xFor(i) - x); if (d < best) { best = d; nearest = i; } });
+            const x = m ? parseFloat(m[1]) : xFor(slotFor(active));
+            let nearest = order[0], best = Infinity;
+            order.forEach((i) => { const d = Math.abs(xFor(i) - x); if (d < best) { best = d; nearest = i; } });
             Carousel.jumpToProject(nearest);
         }
         bar.addEventListener('pointerup', endDrag, { passive: true });
@@ -3632,7 +4055,7 @@ function initMobile() {
                there rather than at the carousel's own starting card. The
                carousel below still primes its meta/name state, so it's fully
                ready the instant a project icon is tapped. */
-            Tab.setActive(0, true);
+            Tab.setActive(PROFILE_TAB, true);
             setName(PROJECTS[activeProject].name, true);
             collectionEl.textContent = c.collection;
             descEl.textContent = c.desc;
@@ -3681,7 +4104,7 @@ function initMobile() {
         let runGen = 0;   /* bumped on every jumpTo() call; a stale run() sees a
                              mismatch and stops itself instead of fighting the
                              newest tween over scrollLeft. */
-        function jumpTo(index) {
+        function jumpTo(index, instant) {
             const target = clamp(index, 0, CARDS.length - 1) * slideW;
             const from = el.scrollLeft;
             const delta = target - from;
@@ -3695,7 +4118,10 @@ function initMobile() {
             if (c.project !== activeProject) { activeProject = c.project; setName(PROJECTS[activeProject].name, false); }
             setMeta(c.collection, c.desc, c.posInCollection, c.collectionCount);
 
-            if (REDUCED) { el.scrollLeft = target; el.classList.remove('tweening'); tweening = false; paint(); return; }
+            /* `instant` is used when the carousel is not on screen yet (the
+               Projects button pressing through from Profile) — same end
+               state, no tween nobody can see. */
+            if (REDUCED || instant) { el.scrollLeft = target; el.classList.remove('tweening'); tweening = false; paint(); return; }
 
             const gen = ++runGen;
             const t0 = performance.now();
@@ -3711,7 +4137,7 @@ function initMobile() {
                 return false;
             });
         }
-        function jumpToProject(pi) { Tab.setActive(pi, false); jumpTo(PROJECT_START[pi]); }
+        function jumpToProject(pi, instant) { Tab.setActive(pi, false); jumpTo(PROJECT_START[pi], instant); }
 
         function layout() {
             slideW = slides[0].getBoundingClientRect().width;
@@ -3813,6 +4239,19 @@ function initMobile() {
                                         // the depth cue opacity used to carry
         const SCALE_FALLOFF = 0.24;     // receding cards shrink rather than fade
         const CULL_RANGE = 2.0;
+        /* ---- settle isolation ----
+           At rest the focused card sits at localP 0 and its neighbour one
+           STEP away at 0.9. That neighbour's -0.81vh offset is pushed far
+           back in Z, and the 850px perspective divide pulls it back toward
+           the middle of the screen hard enough that it visibly peeks above
+           the settled tile. These thresholds fade a card out over the last
+           stretch of its travel INTO a settled neighbour slot, so a settled
+           card is the only one on screen. Mid-swipe both cards sit near
+           0.45 and are fully opaque, so the sequence, the arc and the
+           entrance motion are all untouched — only the resting frame
+           changes. */
+        const ISOLATE_FADE_IN = 0.58;    // fully opaque at or below this |localP|
+        const ISOLATE_FADE_OUT = 0.80;   // fully transparent at or above it
         const POSTER_SEEK = 0.6;        // seconds — later than Echo's 0.01 to dodge blank first frames
         const MAX_CONCURRENT = 3;
 
@@ -3922,7 +4361,7 @@ function initMobile() {
             wrapper.appendChild(inner);
             viewportEl.appendChild(wrapper);
 
-            const rec = { i, wrapper, inner, casing, video, cover, playBtn, display: null, transform: null };
+            const rec = { i, wrapper, inner, casing, video, cover, playBtn, display: null, transform: null, alpha: null };
 
             wrapper.addEventListener('click', () => {
                 /* No drag-vs-tap disambiguation needed here — this is a plain
@@ -3952,8 +4391,13 @@ function initMobile() {
             void inner.offsetWidth; // force reflow so the start state actually paints
             inner.classList.remove('gallery-entrance-start');
             inner.classList.add('gallery-entrance-go');
-            setTimeout(() => inner.classList.remove('gallery-entrance-go'), 700);
+            setTimeout(() => inner.classList.remove('gallery-entrance-go'), 840);
         }
+
+        /* How long the first tile takes to arrive and settle. The welcome
+           typewriter starts after this, not alongside it. */
+        const GALLERY_SETTLE_MS = 720;
+        let welcomeStartTimer = null;
 
         const WELCOME_TEXT = 'Welcome to my Vault';
         let welcomeTimeout;
@@ -3997,7 +4441,6 @@ function initMobile() {
                 if (localP > -CULL_RANGE && localP < CULL_RANGE) {
                     if (rec.display !== 'block') {
                         rec.wrapper.style.display = 'block';
-                        rec.wrapper.style.opacity = '1';   // set once — never touched per-frame, see below
                         rec.display = 'block';
                     }
 
@@ -4016,6 +4459,18 @@ function initMobile() {
                     const scale = (1 - Math.min(Math.abs(settledP), 1.4) * SCALE_FALLOFF).toFixed(3);
                     const transform = `translate(-50%, -50%) translate3d(${posX}px, ${posY}px, ${posZ}px) rotateY(${rotY}deg) rotateZ(${rotZ}deg) scale(${scale})`;
                     if (transform !== rec.transform) { rec.wrapper.style.transform = transform; rec.transform = transform; }
+
+                    /* The ONLY use of opacity on a card. Note this is not the
+                       depth cue the design deliberately rules out — depth is
+                       still carried entirely by position, rotation and scale.
+                       This suppresses a neighbour that has already finished
+                       travelling, and nothing else. Culling and playback are
+                       untouched: a transparent card stays display:block and
+                       keeps whatever playback state it had, so the
+                       three-concurrent-video behaviour is unchanged. */
+                    const alpha = clamp((ISOLATE_FADE_OUT - Math.abs(localP)) /
+                                        (ISOLATE_FADE_OUT - ISOLATE_FADE_IN), 0, 1).toFixed(3);
+                    if (alpha !== rec.alpha) { rec.wrapper.style.opacity = alpha; rec.alpha = alpha; }
                 } else if (rec.display !== 'none') {
                     /* Culled off-screen. Echo's own reference only hides these
                        (display:none) without pausing — added an explicit
@@ -4087,11 +4542,18 @@ function initMobile() {
                the typewriter starts — both are the immediate "you've arrived"
                beat. */
             playEntrance();
-            startWelcomeTypewriter();
+            /* Waits for the tile to settle. Re-checks hasSwiped because the
+               user can swipe during the arrival, and dismissWelcome() having
+               already run must not be undone by a late start. */
+            clearTimeout(welcomeStartTimer);
+            welcomeStartTimer = setTimeout(() => {
+                if (!hasSwiped) startWelcomeTypewriter();
+            }, REDUCED ? 0 : GALLERY_SETTLE_MS);
         }
 
         function leave() {
             running = false;
+            clearTimeout(welcomeStartTimer);
             clearTimeout(welcomeTimeout);
             welcomeEl.style.opacity = '0';
             cards.forEach(rec => {
@@ -4112,6 +4574,7 @@ function initMobile() {
                 rec.wrapper.style.display = 'none';
                 rec.display = 'none';
                 rec.transform = null;
+                rec.alpha = null;
                 /* A played video was upgraded to preload:'auto' for instant
                    resume within the session — release that buffered data once
                    the session (this Gallery visit) is over. */
@@ -4161,6 +4624,10 @@ function initMobile() {
     }
 
     function onResize() {
+        /* Same reasoning as writeViewportUnits: a pinch fires visualViewport
+           resize events, and re-running Carousel/Gallery/Tab layout at the
+           zoomed scale is what corrupted slideW and the tile geometry. */
+        if (isZoomed()) return;
         clearTimeout(settleTimer);
         settleTimer = setTimeout(() => { writeViewportUnits(); relayout(true); }, 220);
 
@@ -4187,11 +4654,32 @@ function initMobile() {
        ========================================================================== */
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
+    /* Decline pinch-zoom. This is a fixed-viewport app — #mobile-root is
+       position:fixed inset:0 and every page is sized to the visible area — so
+       there is nothing to zoom INTO: the browser scales a surface that is
+       already exactly one screen, while position:fixed children detach from
+       the visual viewport and strand the layout. iOS Safari ignores the meta
+       tag's user-scalable=no but DOES honour preventDefault on these gesture
+       events, so this is the mechanism that actually works there. Scoped to
+       the mobile app only; desktop zoom is untouched. */
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach((type) => {
+        document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+    });
+
     requestAnimationFrame(() => {
         moveThumb(true);
         Carousel.layout();
 
-        setTimeout(() => { switcher.classList.add('ready'); Contact.ready(); }, 120);
+        /* ---- ARRIVAL SEQUENCE (mobile Profile) ----
+           Stage 1: header buttons, then the nav pair, land into position.
+           Stage 2: the three photo tiles arrive and settle.
+           Stage 3: the bio resolves in with a slight scale-up.
+           Stage 4: the clock arrives at the bottom.
+           Overall ~1.5s — longer than before so each beat reads as its own,
+           still short enough that nobody is waiting on the page. Every stage
+           is a class flip; the easing lives on the elements themselves so the
+           whole page decelerates on one curve. */
+        setTimeout(() => { switcher.classList.add('ready'); Contact.ready(); }, 90);
 
         setTimeout(() => {
             Carousel.start();
@@ -4215,7 +4703,7 @@ function initMobile() {
             pages.home.classList.remove('arrive');
             void pages.home.offsetWidth;
             pages.home.classList.add('arrive');
-        }, 220);
+        }, 170);
 
         setTimeout(() => {
             Tab.morph();
@@ -4223,7 +4711,19 @@ function initMobile() {
                after morph() is called — title/meta reveal the instant the last
                icon has settled. */
             setTimeout(() => Carousel.reveal(), 1330);
-        }, 480);
+        }, 250);
+
+        /* Stages 2-4. REDUCED collapses them to a single frame rather than
+           leaving content waiting on timers it will never see move. */
+        /* Tiles land at 560; the last card's fade ends at 560+180+460 = 1200
+           and the group settle at 560+620 = 1180, so the bio genuinely starts
+           after the tiles have settled rather than over the top of them. */
+        const stages = [['arr-tiles', 560], ['arr-bio', 1240], ['arr-clock', 1520]];
+        if (REDUCED) {
+            stages.forEach(([cls]) => root.classList.add(cls));
+        } else {
+            stages.forEach(([cls, at]) => setTimeout(() => root.classList.add(cls), at));
+        }
     });
 
     /* Debug handle — nothing in the app reads from window. */
