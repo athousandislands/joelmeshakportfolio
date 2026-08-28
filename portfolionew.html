@@ -25,14 +25,70 @@
     <meta name="twitter:description" content="Joel Meshak's portfolio.">
     <meta name="twitter:image" content="https://joelmeshak.com/assets/projects/digital-art/gallery/hair.png">
 
+    <!-- Favicon set, generated from a tight face-crop of assets/profilepic1.png.
+         These hrefs were previously root-absolute (/favicon.ico, /icon-32.png,
+         ...) on the assumption the files would sit at the site root. They are
+         actually in assets/, so every one of them 404'd and the browser fell
+         back to no icon at all — the files were fine, the paths pointed at
+         nothing. Now document-relative, matching the convention every other
+         asset on this page already uses (assets/projects/..., assets/
+         profilepic1.png), which also keeps them correct if the site is ever
+         served from a subdirectory rather than a domain root. -->
+    <link rel="icon" href="assets/favicon.ico" sizes="48x48">
+    <link rel="icon" href="assets/icon-32.png" type="image/png" sizes="32x32">
+    <link rel="icon" href="assets/icon-192.png" type="image/png" sizes="192x192">
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" sizes="180x180">
+    <link rel="manifest" href="assets/site.webmanifest">
+    <meta name="theme-color" content="#CCCCCC">
+
+
     <script>
     (function () {
-        var coarse = matchMedia('(pointer: coarse)').matches;
-        var w = window.innerWidth, h = window.innerHeight;
-        var minDim = Math.min(w, h);
-        var narrow = minDim <= 820;
-        var isMobile = (coarse && narrow) || minDim <= 600;
+        /* ONE decision this script makes: does this device get the phone
+           DOM/CSS experience (#mobile-root) or the desktop/Vault experience
+           (#desktop-root)? Tablet-vs-desktop is NOT decided here — both get
+           #desktop-root, and the difference between them (touch fallbacks,
+           portrait/landscape composition) is handled inside that experience
+           itself, by ordinary CSS media features and pointer/hover checks.
+           That is what keeps this a two-path system rather than a three-way
+           branch that has to be kept in sync in two places.
+
+           minDim = min(width, height) is the device's short physical
+           dimension, and — critically — it is IDENTICAL in portrait and
+           landscape, since rotating a device swaps width and height without
+           changing which one is smaller. A phone's minDim is ~350-480px in
+           either orientation; iPad Mini/Air/Pro all sit at 744-1024px in
+           either orientation. So this class can never flip on rotation, only
+           on an actual device change or a desktop window resized across the
+           threshold — see the reload guard below for that case. */
+        function computeIsMobile() {
+            return Math.min(window.innerWidth, window.innerHeight) <= 600;
+        }
+        var isMobile = computeIsMobile();
         document.documentElement.dataset.exp = isMobile ? 'mobile' : 'desktop';
+
+        /* Re-evaluated on resize/orientationchange because this was
+           previously computed once at load and never revisited — a desktop
+           window resized past 600px width, or (in principle) a device
+           reporting different values after boot, would keep the wrong
+           experience until a manual refresh. #mobile-root's DOM/CSS system
+           and #desktop-root's WebGL Vault are two entirely different runtime
+           architectures with their own event listeners, RAF loops and (on
+           desktop) live GL contexts — hot-swapping between them in place
+           would mean tearing down and reconstructing one of them correctly
+           on every crossing, which is real complexity for an event that, per
+           the note above, only fires for a genuine device/class change, not
+           for everyday rotation. A reload is the conventional, low-risk way
+           to land cleanly on the correct experience instead. */
+        var reevalTimer = null;
+        function reevaluate() {
+            clearTimeout(reevalTimer);
+            reevalTimer = setTimeout(function () {
+                if (computeIsMobile() !== isMobile) location.reload();
+            }, 260);
+        }
+        window.addEventListener('resize', reevaluate);
+        window.addEventListener('orientationchange', reevaluate);
     })();
     </script>
     <style>
@@ -284,6 +340,38 @@
         }
         #pulse-notice .pulse-begin:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18); }
         #pulse-notice .pulse-begin:disabled { opacity: 0.6; cursor: default; transform: none; box-shadow: none; }
+
+        /* Sits on the same fixed/centred/glass foundation as #pulse-notice
+           (.pulse-panel), just narrower and without the Begin button — this
+           is an acknowledgement, not a flow with a next step. */
+        #webgl-notice {
+            left: 50%; top: 50%;
+            width: min(380px, 86vw);
+            padding: 30px 28px 26px;
+            transform: translate(-50%, -50%) translateY(8px) scale(0.98);
+        }
+        #webgl-notice.visible { transform: translate(-50%, -50%) translateY(0) scale(1); }
+        #webgl-notice h3 {
+            margin: 0 0 12px;
+            padding-right: 22px;   /* clears the close button */
+            font-size: 1.05rem;
+            font-weight: 600;
+            line-height: 1.35;
+            color: #ffffff;
+            letter-spacing: 0.01em;
+        }
+        #webgl-notice p { margin: 0; font-size: 0.9rem; line-height: 1.55; color: #ffffff; opacity: 0.86; }
+        #webgl-notice-close {
+            position: absolute;
+            top: 14px; right: 14px;
+            width: 26px; height: 26px;
+            display: flex; align-items: center; justify-content: center;
+            appearance: none; border: 0; background: none; padding: 0;
+            color: #ffffff; opacity: 0.7; cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+        #webgl-notice-close:hover { opacity: 1; }
+        #webgl-notice-close svg { width: 15px; height: 15px; }
 
         #pulse-onboard {
             left: 50%;
@@ -583,6 +671,41 @@
             transform: translateX(-50%);
         }
         #hp-enter-btn:hover { transform: translateX(-50%) translateY(-1px); }
+
+        /* ==========================================================================
+           TABLET-PORTRAIT COMPOSITION
+           --------------------------------------------------------------------------
+           #desktop-root now serves every non-phone device in both
+           orientations (see the boot classification script) — tablets no
+           longer cross over to the mobile DOM/CSS system on rotation, which
+           would otherwise mean a full reload every time someone turns their
+           iPad. Landscape keeps the composition exactly as designed: an
+           editorial-style block sitting in the left third with negative
+           space on the right, which reads as intentional on a wide canvas.
+
+           At iPad-portrait proportions that same left-aligned block leaves a
+           large dead zone on the right — which is what "clustered toward one
+           area" in the original report actually was. This override centres
+           the SAME #hp-inner/#hp-stack/#hp-bio elements into a stacked
+           column instead, closer to the mobile arrangement's proportions,
+           without touching a single desktop token, DOM node, or line of JS —
+           only where this existing composition sits and how wide it is.
+
+           A plain `orientation` media feature rather than a device check, per
+           the agreed principle (width + pointer decide the ROOT; aspect
+           ratio decides the COMPOSITION within it) — so it also self-corrects
+           if a desktop browser window is simply resized taller than it is
+           wide, which is the right behaviour there too, not a tablet-only
+           special case. */
+        @media (orientation: portrait) {
+            #hp-inner {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: min(420px, 72vw);
+                transform: translate(-50%, -50%);
+            }
+        }
 
         /* ==========================================================================
            HOMEPAGE ARRIVAL (desktop)
@@ -1737,7 +1860,7 @@
            and size below is a fraction of it, so the proportions are
            identical at any resulting size. */
         #mobile-root #profile-stack {
-            --pf-card: min(142px, calc(var(--panel-h) * 0.26), 40vw);
+            --pf-card: min(142px, calc(var(--panel-h) * 0.26), calc(var(--mvw) * 40));
             position: relative;
             width: 100%;
             /* Tight to the lowest card (clustered: 0.288 + 1 = 1.288 cards)
@@ -1797,7 +1920,34 @@
         /* Expanded — flat row, no sway (movement stops once they settle). */
         #mobile-root #profile-stack.is-expanded { height: calc(var(--pf-card) * 1.317); }
         #mobile-root #profile-stack.is-expanded .profile-photo {
-            width: 31.5%;
+            /* Was `width: 31.5%` (of the stack's own width, which scales with
+               the viewport) against `height: calc(var(--pf-card) * 1.09)` (a
+               near-constant, since --pf-card's ceiling binds on almost every
+               real device — see TABLET-WINDOW HEADROOM above). Two unrelated
+               bases meant the frame's aspect ratio quietly depended on screen
+               width: fine on the narrow range real phones sit in, but a
+               tablet-width stack (or this same #mobile-root reached by a wide
+               desktop window) stretched the frame into a landscape shape
+               while the photo inside stayed portrait — object-fit:cover then
+               crops the top and bottom to fill it. That was the reported
+               iPad cropping.
+
+               aspect-ratio fixes it by definition: both dimensions now derive
+               from the SAME value (--pf-card) at every width, so the frame
+               can't diverge from the photo's own proportions regardless of
+               viewport. 0.69 matches this frame's previous resolved ratio at
+               phone width, so real phones keep the same size to within a
+               couple of px. width MUST be set to auto — aspect-ratio only
+               fills in a dimension that isn't otherwise specified, and the
+               base .profile-photo rule above already sets an explicit
+               `width: var(--pf-card)` that would otherwise still win here.
+
+               The translateX(212%)/translateX(106%) row-spacing below needs
+               no change: percentage transforms resolve against the element's
+               OWN box, so they automatically track whatever width
+               aspect-ratio computes, at any screen size. */
+            width: auto;
+            aspect-ratio: 0.69;
             height: calc(var(--pf-card) * 1.09);
             border-radius: 13%;
         }
@@ -2191,7 +2341,7 @@
                width-only cap would make a tile taller than the screen. The
                height term keeps the whole tile + controls inside the visible
                frame on any device shape. */
-            width: min(78vw, 420px, calc(var(--app-mh) * 1.15));
+            width: min(calc(var(--mvw) * 78), 420px, calc(var(--app-mh) * 1.15));
             display: none;
             opacity: 0;
             transform-style: preserve-3d;
@@ -2261,7 +2411,7 @@
         #mobile-root .gallery-cover {
             position: absolute; inset: 0;
             background: rgba(0, 0, 0, 0.6);
-            display: flex; align-items: center; justify-content: center;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
             z-index: 3;
             transition: opacity 0.4s ease;
             pointer-events: none;
@@ -2270,12 +2420,35 @@
             color: #ffffff;
             font-weight: 400;
             letter-spacing: 0.02em;
-            font-size: clamp(1.05rem, 4.5vw, 1.5rem);
+            font-size: clamp(1.05rem, calc(var(--mvw) * 4.5), 1.5rem);
             margin: 0;
             text-align: center;
             padding: 0 16px;
             text-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
         }
+        /* Video failure state — see markFailed()/retryCard() in the Gallery
+           module. The existing dark .gallery-cover and title are reused as
+           the base (a failed video just never lets the cover fade out); this
+           message sits beneath the title, and the whole card becomes the
+           retry target. No new visual language, no separate error screen —
+           it's the same cover the card already shows while paused, with one
+           more line of text. */
+        #mobile-root .gallery-video-message {
+            margin: 10px 0 0;
+            max-width: 240px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            line-height: 1.4;
+            color: rgba(255, 255, 255, 0.82);
+            text-align: center;
+            padding: 0 16px;
+        }
+        #mobile-root .gallery-card.gallery-video-failed .gallery-cover {
+            opacity: 1 !important;   /* overrides the play-state opacity:0 the click handler sets on every other card */
+            pointer-events: auto;
+            cursor: pointer;
+        }
+        #mobile-root .gallery-card.gallery-video-failed .gallery-play-wrap { opacity: 0.35; pointer-events: none; }
 
         /* ---- control cluster: scrubber above the play button, both reading
            as one system rather than two separate elements ---- */
@@ -2467,8 +2640,8 @@
         #mobile-root[data-orient="landscape"] #profile-panel {
             flex-direction: row;
             align-items: center;
-            gap: clamp(16px, 3vw, 26px);
-            padding: 0 clamp(16px, 4vw, 28px);
+            gap: clamp(16px, calc(var(--mvw) * 3), 26px);
+            padding: 0 clamp(16px, calc(var(--mvw) * 4), 28px);
         }
         #mobile-root[data-orient="landscape"] #profile-stack {
             /* The expanded state is a 3-card vertical column, so its full
@@ -2482,7 +2655,7 @@
             --pl-card: min(
                 106px,
                 calc((var(--panel-h) - (var(--pl-gap) * 2) - 8px) / 3),
-                26vw
+                calc(var(--mvw) * 26)
             );
             flex: 0 0 auto;
             width: var(--pl-card);
@@ -2537,13 +2710,49 @@
         }
 
         /* Landscape tiles at 87% of the portrait sizing. The whole min() is
-           scaled rather than any single term, so all three constraints (78vw,
-           the 420px cap, and the --app-mh height bound that keeps tile +
-           controls inside a short viewport) still apply — they just resolve
-           13% smaller. The tiles technically fitted before; this is purely
-           about them not filling the frame edge to edge. */
+           scaled rather than any single term, so all three constraints (the
+           viewport-width term, the 420px cap, and the --app-mh height bound
+           that keeps tile + controls inside a short viewport) still apply —
+           they just resolve 13% smaller. The tiles technically fitted
+           before; this is purely about them not filling the frame edge to
+           edge. */
         #mobile-root[data-orient="landscape"] .gallery-card {
-            width: calc(min(78vw, 420px, calc(var(--app-mh) * 1.15)) * 0.87);
+            width: calc(min(calc(var(--mvw) * 78), 420px, calc(var(--app-mh) * 1.15)) * 0.87);
+        }
+
+        /* ==========================================================================
+           TABLET-WINDOW HEADROOM
+           --------------------------------------------------------------------------
+           Every scale token above (--pf-card, --tabbar-h, gallery card width,
+           bio font-size) is capped at a number sized for real phone hardware.
+           That's fine for actual phones, but it's still a ceiling picked for
+           one device class shared by every device that reaches #mobile-root —
+           and #mobile-root's own boundary is minDim <= 600px, a few phone-
+           widths wider than any real phone's short edge (~360-430px). The gap
+           between them is reachable only by a desktop browser window
+           deliberately narrowed into the 480-600px band; every real phone
+           renders at the same size as before this block exists.
+
+           Why 480px and not just raising the shared numbers directly: verified
+           by computing --pf-card across a set of real phones against the
+           current formula — 142px is the actively binding term on most of
+           them (iPhone 13, 14 Pro Max, Pixel 7, Galaxy S21 all resolve to
+           exactly 142 today). Raising that number in place would visibly
+           change every one of those phones, not just the in-between window
+           case this is meant for. Scoping the raise behind a width no real
+           phone reaches is what makes it provably inert for phones while
+           still fixing the token for the case it was written for. */
+        @media (min-width: 480px) {
+            #mobile-root #profile-stack {
+                --pf-card: min(175px, calc(var(--panel-h) * 0.26), calc(var(--mvw) * 40));
+            }
+            #mobile-root { --tabbar-h: clamp(39px, calc(var(--app-mh) * 0.060), 52px); }
+            #mobile-root .gallery-card {
+                width: min(calc(var(--mvw) * 78), 460px, calc(var(--app-mh) * 1.15));
+            }
+            #mobile-root #profile-bio {
+                font-size: clamp(0.79rem, calc(var(--panel-h) * 0.032), 0.98rem);
+            }
         }
 
         /* ==========================================================================
@@ -2762,6 +2971,18 @@
         <div id="pulse-input-blocked" class="pulse-panel">
             <p>Touch interaction is disabled in Pulse mode. Turn off Pulse to re-enable.</p>
         </div>
+
+        <!-- Shares .pulse-panel's real-glass treatment (blur/tint/border/
+             shadow) rather than introducing a second glass style. Dismissed
+             via the X or a click outside — see the JS wiring near
+             VaultBridge.fail() for both, plus the outside-click listener. -->
+        <div id="webgl-notice" class="pulse-panel">
+            <button type="button" id="webgl-notice-close" aria-label="Dismiss">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+            <h3>The interactive Vault needs graphics acceleration</h3>
+            <p>Your browser isn't currently able to run the graphics required for this experience. Enable graphics acceleration in your browser settings, then try again.</p>
+        </div>
     </div>
 
     <!-- Context-loss fallback (FIX 14b) -->
@@ -2896,18 +3117,27 @@ const PROFILE_LINKS = {
    the moment initDesktop() calls markReady().
    ========================================================================== */
 const VaultBridge = (() => {
-    let ready = false;
+    /* Three terminal states instead of a single ready flag: 'pending' while
+       the CDN/WebGL chain is still running, 'ready' on success, 'failed' on
+       any error in that chain (thrown synchronously or via promise
+       rejection — see the initDesktop(Homepage).catch(...) call site, which
+       is what actually reaches fail() below). onSettle() covers both
+       outcomes with one queue, so a click that arrives before either has
+       happened is handled correctly either way once it's known. */
+    let state = 'pending';
     let enterFn = null;
+    let failReason = null;
     let queue = [];
+    function flush() { const q = queue; queue = []; q.forEach(cb => cb()); }
     return {
-        get ready() { return ready; },
-        onReady(cb) { if (ready) cb(); else queue.push(cb); },
-        markReady(fn) {
-            enterFn = fn;
-            ready = true;
-            const q = queue; queue = [];
-            q.forEach(cb => cb());
-        },
+        get ready() { return state === 'ready'; },
+        get failed() { return state === 'failed'; },
+        get failReason() { return failReason; },
+        onSettle(cb) { if (state !== 'pending') cb(); else queue.push(cb); },
+        markReady(fn) { if (state !== 'pending') return; enterFn = fn; state = 'ready'; flush(); },
+        /* Only the FIRST failure counts. Once WebGL is confirmed unavailable
+           for this session it stays that way — nothing here retries init. */
+        fail(reason) { if (state !== 'pending') return; state = 'failed'; failReason = reason; flush(); },
         enter() { if (enterFn) enterFn(); }
     };
 })();
@@ -3051,21 +3281,52 @@ function initDesktopHomepage() {
             inner.className = 'hp-photo-inner';
             const img = document.createElement('img');
             img.src = src; img.alt = ''; img.decoding = 'async';
+            /* A missing/failed photo previously left a broken-image glyph
+               sitting inside the card. Hiding it falls back to the card's
+               own #bdbdbd background — a plain placeholder, not a visibly
+               broken one. */
+            img.onerror = () => { img.style.display = 'none'; };
             inner.appendChild(img);
             card.appendChild(inner);
             stack.appendChild(card);
         });
     }
 
-    /* Desktop expands on hover, collapses on leave. */
-    stack.addEventListener('mouseenter', () => {
-        stack.classList.remove('is-clustered');
-        stack.classList.add('is-expanded');
-    });
-    stack.addEventListener('mouseleave', () => {
-        stack.classList.remove('is-expanded');
-        stack.classList.add('is-clustered');
-    });
+    /* Desktop expands on hover, collapses on leave — but ONLY for a real
+       mouse. On a touch device (this now includes tablets, which share this
+       desktop-root composition) there is no mouseleave to close it: a tap
+       synthesises mouseenter, the cluster opens, and it never gets a
+       matching "leave" event, so it stays stuck open. Gating behind
+       (hover: hover) and (pointer: fine) is checked once at setup, not
+       per-event, since a device's input capability doesn't change mid-
+       session — the same assumption already used for the mind map's own
+       hover/touch split (Router.scene === 3 in initDesktop below) and for
+       the .nav-btn cursor-follow gradient. */
+    if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
+        stack.addEventListener('mouseenter', () => {
+            stack.classList.remove('is-clustered');
+            stack.classList.add('is-expanded');
+        });
+        stack.addEventListener('mouseleave', () => {
+            stack.classList.remove('is-expanded');
+            stack.classList.add('is-clustered');
+        });
+    } else {
+        /* Same tap-to-toggle used on mobile's own #profile-stack — proven
+           there, reused here verbatim rather than writing a second version
+           of the same interaction. */
+        const toggleStack = () => {
+            const expanded = stack.classList.contains('is-expanded');
+            stack.classList.toggle('is-expanded', !expanded);
+            stack.classList.toggle('is-clustered', expanded);
+        };
+        stack.setAttribute('role', 'button');
+        stack.setAttribute('tabindex', '0');
+        stack.addEventListener('click', toggleStack);
+        stack.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleStack(); }
+        });
+    }
 
     let goneTimer = null;
     let enterPending = false;
@@ -3088,13 +3349,26 @@ function initDesktopHomepage() {
 
     function enterVault() {
         if (enterPending) return;
+        /* Already known broken (e.g. the person clicked once, waited, saw the
+           notice, dismissed it, and clicks again) — show it again immediately
+           rather than re-entering a "Loading…" state that will never change. */
+        if (VaultBridge.failed) { showWebglNotice(); return; }
         if (!VaultBridge.ready) {
             /* The Vault's THREE.js/GSAP CDN chain hasn't finished yet — queue
              the entrance instead of doing nothing, so a fast click right after
              page load still works once loading completes. */
             enterPending = true;
             enterBtn.textContent = 'Loading\u2026';
-            VaultBridge.onReady(proceedIntoVault);
+            VaultBridge.onSettle(() => {
+                enterPending = false;
+                enterBtn.textContent = 'Enter The Vault';
+                /* This is the fix for the stuck "Loading…" button: previously
+                   markReady() was the only way out of this state, and a thrown
+                   WebGL error meant it was never called, so the label sat here
+                   forever. onSettle() now also resolves on VaultBridge.fail(),
+                   so the button always reaches a real, honest end state. */
+                if (VaultBridge.failed) showWebglNotice(); else proceedIntoVault();
+            });
             return;
         }
         proceedIntoVault();
@@ -3157,8 +3431,17 @@ function initDesktopHomepage() {
         const open = () => hpContact.classList.add('is-open');
         const close = () => hpContact.classList.remove('is-open');
 
-        hpContact.addEventListener('mouseenter', open);
-        hpContact.addEventListener('mouseleave', close);
+        /* mouseenter/mouseleave gated to real mice only. Previously both were
+           bound unconditionally alongside the click toggle below — on touch,
+           a tap synthesises mouseenter BEFORE the click fires, so hover
+           opened it and the very same tap's click then immediately toggled
+           it shut again. Net effect on a tablet: tapping Contact did nothing.
+           The click/keydown toggle two lines down was always the correct
+           touch path; it just had an unwanted hover sibling fighting it. */
+        if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
+            hpContact.addEventListener('mouseenter', open);
+            hpContact.addEventListener('mouseleave', close);
+        }
         hpContact.addEventListener('click', (e) => {
             e.stopPropagation();
             hpContact.classList.toggle('is-open');
@@ -3647,6 +3930,10 @@ function initMobile() {
                 img.alt = '';
                 img.loading = 'lazy';
                 img.decoding = 'async';
+                /* Same fallback as the desktop cluster above — falls back
+                   to the card's own placeholder background instead of a
+                   broken-image glyph. */
+                img.onerror = () => { img.style.display = 'none'; };
                 inner.appendChild(img);
                 card.appendChild(inner);
                 stack.appendChild(card);
@@ -4253,7 +4540,17 @@ function initMobile() {
         const ISOLATE_FADE_IN = 0.58;    // fully opaque at or below this |localP|
         const ISOLATE_FADE_OUT = 0.80;   // fully transparent at or above it
         const POSTER_SEEK = 0.6;        // seconds — later than Echo's 0.01 to dodge blank first frames
-        const MAX_CONCURRENT = 3;
+        /* Was 3. Every eligible card also does a poster-frame decode on
+           load (see the loadedmetadata listener above), and Android hardware
+           video decoders are a small, shared, genuinely finite resource on
+           mid-range chipsets — several simultaneous decode+playback requests
+           can exceed that budget, and the elements that lose the race render
+           black with no error at all (there's nothing to error about; they
+           just never get a decoder). This was ALSO more aggressive than the
+           desktop Vault's own MAX_CONCURRENT_VIDEOS = 2 on stronger hardware,
+           which was backwards. 2 matches desktop and gives real headroom on
+           the weakest devices on the testing matrix. */
+        const MAX_CONCURRENT = 2;
 
         function approach(current, target, ratePerSixtyHz, dt) {
             const f = 1 - Math.pow(1 - ratePerSixtyHz, dt * 60);
@@ -4271,6 +4568,17 @@ function initMobile() {
             rec.playBtn.classList.remove('is-pause');
             rec.playBtn.classList.add('is-play');
         }
+
+        /* Videos keep decoding when the tab is backgrounded — there's no
+           reason to spend battery/CPU on frames nobody can see. Pausing on
+           hide rather than tearing anything down means `document.hidden`
+           flipping back simply leaves the cards exactly as the person left
+           them, paused with their last frame as the poster. */
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                Array.from(playingSet).forEach(pauseCard);
+            }
+        });
 
         function enforceConcurrencyCap(justAdded) {
             if (playingSet.size <= MAX_CONCURRENT) return;
@@ -4293,7 +4601,48 @@ function initMobile() {
             video.muted = true; video.loop = true; video.playsInline = true;
             video.setAttribute('playsinline', ''); video.setAttribute('muted', '');
             video.preload = 'metadata';
-            video.src = v.src;
+            /* <source> list rather than a bare video.src, so the browser does
+               its own conventional codec negotiation — it tries each in
+               order and moves on if one can't be decoded — and so adding a
+               modern codec later (e.g. VP9/WebM for the Android devices that
+               benefit most) is a one-line data change (v.srcWebm) rather
+               than a code change. Order matters: WebM first since it's only
+               ever a bonus when present, H.264 last as the universal floor
+               every target device on the testing matrix can decode. */
+            if (v.srcWebm) {
+                const s = document.createElement('source');
+                s.src = v.srcWebm; s.type = 'video/webm';
+                video.appendChild(s);
+            }
+            const mp4 = document.createElement('source');
+            mp4.src = v.src; mp4.type = 'video/mp4';
+            video.appendChild(mp4);
+
+            /* Primary failure signal. Fires when NONE of the sources above
+               can be decoded (MEDIA_ERR_SRC_NOT_SUPPORTED, code 4 — the
+               codec-mismatch case this was written for) or on a genuine load
+               failure (MEDIA_ERR_NETWORK, code 2). This is what the previous
+               version of this card never listened for at all: play() was
+               fired, the cover was hidden, and the icon flipped to pause
+               unconditionally, regardless of whether playback actually
+               started — which is why a failure looked like nothing happening
+               rather than like a failure. */
+            video.addEventListener('error', () => {
+                /* `error` on a media element is not by itself proof of
+                   failure: it also fires while the browser is still working
+                   through the <source> list, and it can arrive with
+                   video.error still null (nothing actually went wrong yet) or
+                   with MEDIA_ERR_ABORTED, which is what a deliberate pause()
+                   or load() of a loading element produces — including the
+                   ones this code issues itself via the concurrency cap and
+                   retry. Only a populated MediaError that is NOT an abort is
+                   a real failure. Everything else is normal loading noise and
+                   must stay invisible. */
+                const err = video.error;
+                if (!err) return;
+                if (err.code === 1 /* MEDIA_ERR_ABORTED */) return;
+                markFailed(rec, err.code === 4 ? 'unsupported' : 'network');
+            });
 
             /* First-frame poster trick: with preload="metadata" the browser
                only fetches headers, not the full stream. Nudging currentTime
@@ -4310,7 +4659,10 @@ function initMobile() {
             const title = document.createElement('h3');
             title.className = 'gallery-card-title';
             title.textContent = v.title;
-            cover.appendChild(title);
+            const message = document.createElement('p');
+            message.className = 'gallery-video-message';
+            message.hidden = true;
+            cover.append(title, message);
 
             casing.append(video, cover);
 
@@ -4361,9 +4713,10 @@ function initMobile() {
             wrapper.appendChild(inner);
             viewportEl.appendChild(wrapper);
 
-            const rec = { i, wrapper, inner, casing, video, cover, playBtn, display: null, transform: null, alpha: null };
+            const rec = { i, wrapper, inner, casing, video, cover, message, playBtn, display: null, transform: null, alpha: null, failed: false };
 
             wrapper.addEventListener('click', () => {
+                if (rec.failed) { retryCard(rec); return; }
                 /* No drag-vs-tap disambiguation needed here — this is a plain
                    native scroll container, and browsers already suppress the
                    synthetic click that would otherwise follow a scroll drag. */
@@ -4371,15 +4724,85 @@ function initMobile() {
                 if (video.paused) {
                     playingSet.add(rec);
                     enforceConcurrencyCap(rec);
-                    const p = video.play(); if (p && p.catch) p.catch(() => {});
-                    cover.style.opacity = '0';
-                    playBtn.classList.remove('is-play'); playBtn.classList.add('is-pause');
+                    startPlayback(rec);
                 } else {
                     pauseCard(rec);
                 }
             });
 
             return rec;
+        }
+
+        /* ---- video failure handling ----
+           ONE detector now: the `error` event bound in buildCard() above,
+           which reports a real MediaError the browser has actually raised,
+           plus the NotSupportedError branch of the play() rejection below.
+
+           The elapsed-time watchdog that used to live here has been REMOVED,
+           not lengthened. It sampled `rec.video.paused || readyState < 3` a
+           fixed 1800ms after play() resolved and read anything short of
+           HAVE_FUTURE_DATA as a failure — but that is exactly the state a
+           perfectly healthy video occupies while it is still buffering, and
+           `paused` was additionally true for any card the concurrency cap had
+           legitimately paused in the meantime. So it fired on the normal
+           lazy/staggered load path and made a working device look broken.
+
+           Elapsed time cannot distinguish "waiting" from "failed", and no
+           threshold makes it able to; only the browser knows, and it says so
+           through MediaError. A video that is merely slow now shows its
+           poster frame and nothing else — silence is the loading state. */
+        function startPlayback(rec) {
+            const p = rec.video.play();
+            if (p && p.catch) {
+                p.catch((e) => {
+                    const name = e && e.name;
+                    /* NotSupportedError is the only rejection that means this
+                       video will never play. AbortError is what a pause() or
+                       load() arriving mid-play() produces — routinely issued
+                       by enforceConcurrencyCap(), retryCard() and the cull in
+                       positionCards() — and NotAllowedError is an autoplay
+                       policy block. Neither is a broken video, so both simply
+                       return the card to its resting paused state with no
+                       message. The previous code marked EVERY rejection as
+                       'unsupported', which meant tapping a second video while
+                       a first was playing could flag a perfectly good file. */
+                    if (name === 'NotSupportedError') { markFailed(rec, 'unsupported'); return; }
+                    if (!rec.failed) pauseCard(rec);
+                });
+            }
+            rec.cover.style.opacity = '0';
+            rec.playBtn.classList.remove('is-play'); rec.playBtn.classList.add('is-pause');
+        }
+
+        function markFailed(rec, reason) {
+            if (rec.failed) return;
+            rec.failed = true;
+            playingSet.delete(rec);
+            rec.video.pause();
+            rec.wrapper.classList.add('gallery-video-failed');
+            rec.cover.style.opacity = '1';
+            rec.playBtn.classList.remove('is-pause'); rec.playBtn.classList.add('is-play');
+            /* Wording matched to what actually happened, not a single generic
+               line — a codec problem and a dropped network request are
+               different failures and read differently to someone who isn't
+               going to see a status code. Neither mentions the mechanism. */
+            rec.message.textContent = reason === 'unsupported'
+                ? "Video can't play in this browser. Showing a preview instead."
+                : "Couldn't load this video. Tap to retry.";
+            rec.message.hidden = false;
+        }
+
+        function retryCard(rec) {
+            rec.failed = false;
+            rec.wrapper.classList.remove('gallery-video-failed');
+            rec.message.hidden = true;
+            /* .load() resets the element and re-runs source selection from
+               the top of the <source> list — a genuine retry, not just
+               calling play() again on an element already in an error state. */
+            rec.video.load();
+            playingSet.add(rec);
+            enforceConcurrencyCap(rec);
+            startPlayback(rec);
         }
 
         GALLERY_VIDEOS.forEach((v, i) => cards.push(buildCard(v, i)));
@@ -4761,15 +5184,16 @@ async function initDesktop(Homepage) {
 
     const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    /* Capability flag. This is a *device* decision, not a *layout* decision, so it
-       is deliberately separate from viewport width. It never changes at runtime. */
-    const LOW_POWER = (() => {
-        const mem = navigator.deviceMemory;
-        const cores = navigator.hardwareConcurrency;
-        if (typeof mem === 'number' && mem <= 4) return true;
-        if (typeof cores === 'number' && cores <= 4) return true;
-        return /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-    })();
+    /* The LOW_POWER capability flag that used to live here has been REMOVED.
+       Its UA test matched /iPad/, so every tablet reaching #desktop-root was
+       silently routed into a reduced build of the Vault: a random 33-of-76
+       mind-map tile subset, half-resolution (256px) tile textures, a
+       flat-roughness glass material with the thaw shader compiled out, and a
+       25% smaller particle count. That reduced path no longer exists in any
+       form — there is exactly one build of this experience, and every device
+       served #desktop-root gets it. Load is managed at RUNTIME instead, by the
+       Governor (pixel-ratio throttling) and the Idle scheduler, both of which
+       measure real frame cost rather than guessing from a user-agent string. */
 
     /* ==========================================================================
        0b. IDLE SCHEDULER  (FIX 8)
@@ -6732,7 +7156,7 @@ async function initDesktop(Homepage) {
         }
     `;
 
-    const totalParticles = LOW_POWER ? 2295 : 3060;
+    const totalParticles = 3060;
     const structuralGeometry = new THREE.BufferGeometry();
     {
         const spatialCoords = new Float32Array(totalParticles * 3);
@@ -6867,7 +7291,7 @@ async function initDesktop(Homepage) {
         const mat = new THREE.MeshPhysicalMaterial({
             color: isFront ? 0xb5b5b5 : 0xcacaca,
             metalness: 0.1,
-            roughness: LOW_POWER ? 0.25 : 0.666,
+            roughness: 0.666,
             transmission: 0.65,
             ior: 1.305,
             thickness: isFront ? 10.0 : 15.0,
@@ -6877,7 +7301,9 @@ async function initDesktop(Homepage) {
             clearcoatRoughness: 0.1
         });
 
-        if (!LOW_POWER) {
+        /* Unconditional: the glass folders compile the thaw shader on every
+           device. There is no reduced material variant any more. */
+        {
             mat.onBeforeCompile = (shader) => {
                 shader.vertexShader = `
                     attribute float aThaw;
@@ -7550,51 +7976,23 @@ async function initDesktop(Homepage) {
         const allKtx2Paths = imageFiles.map(f => `${MINDMAP.ktx2Dir}${f.replace(/\.[^.]+$/, '')}.ktx2`);
         const FULL_N = imageFiles.length;
 
-        /* ---- TILE SUBSET ------------------------------------------------------
-           Desktop renders the full set. Low-power devices render a random subset,
-           chosen ONCE per page load — before any warming starts, so we only ever
-           download the tiles we will actually show. Re-entering the mind map in
-           the same session reuses the same (already prepared) set; a fresh visit
-           gets a fresh combination. All 76 source files stay in the repo.
-
-           Gated on LOW_POWER, not V.compact: the subset must be fixed before the
-           first byte is fetched, and V.compact can flip when a desktop window is
-           resized. LOW_POWER is a one-time device-capability read. */
-        const MOBILE_TILE_COUNT = 33;
-
-        const activeIndices = (() => {
-            if (!LOW_POWER || FULL_N <= MOBILE_TILE_COUNT) {
-                return Array.from({ length: FULL_N }, (_, i) => i);
-            }
-            const pool = Array.from({ length: FULL_N }, (_, i) => i);
-            for (let i = pool.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [pool[i], pool[j]] = [pool[j], pool[i]];
-            }
-            return pool.slice(0, MOBILE_TILE_COUNT);
-        })();
-
-        const N = activeIndices.length;
-        const imagePaths = activeIndices.map(i => allImagePaths[i]);
-        const ktx2Paths = activeIndices.map(i => allKtx2Paths[i]);
+        /* ---- TILE SET ---------------------------------------------------------
+           Every device renders every tile. The random 33-of-76 subset that used
+           to be selected here for LOW_POWER devices is gone — it was the single
+           thing making an iPad Mini's mind map visibly poorer than a desktop's,
+           and it is not being replaced with a narrower condition. */
+        const N = FULL_N;
+        const imagePaths = allImagePaths;
+        const ktx2Paths = allKtx2Paths;
 
         /* ---- DENSITY --------------------------------------------------------
-           Fewer tiles on the same sphere would read as sparse, so tile size grows
-           to hold the coverage. Exact area parity would be sqrt(76/33) = 1.518,
-           but these are FLAT quads on a curved surface: at 1.518 a tile's
-           half-diagonal subtends ~41 degrees of the sphere and neighbouring
-           corners start to interpenetrate. Capped at 1.40 (~55% coverage vs 64%)
-           — marginally sparser, visibly cleaner silhouette.
-
-           The push interaction radius is in world units and was tuned to catch a
-           certain NUMBER of neighbours. With tiles further apart it must scale by
-           the same factor or the ripple catches ~half as many tiles and feels
-           stingy. maxPush and the idle pulse are proportional to position and are
-           left alone. */
-        const DENSITY_SCALE = Math.min(Math.sqrt(FULL_N / N), 1.40);
-        const TILE = 0.78 * DENSITY_SCALE;
-        const EFFECT_RADIUS_BASE = 1.8 * DENSITY_SCALE;
-        const EFFECT_RADIUS_HOLD = 0.7 * DENSITY_SCALE;
+           With the reduced subset gone, the sphere always carries the full tile
+           count, so the DENSITY_SCALE compensation that used to inflate tile
+           size and effect radius for a sparser sphere is gone with it. These are
+           the values the full/desktop set was always tuned against. */
+        const TILE = 0.78;
+        const EFFECT_RADIUS_BASE = 1.8;
+        const EFFECT_RADIUS_HOLD = 0.7;
 
         /* Scene graph objects that are cheap and stateless live here; anything
            holding GPU memory is created in mount(). */
@@ -7642,9 +8040,9 @@ async function initDesktop(Homepage) {
            going wider just queues behind it while holding more payloads in
            flight. */
         const NET_BATCH = 4;
-        const TRANSCODE_BATCH = LOW_POWER ? 2 : 4;
+        const TRANSCODE_BATCH = 4;
 
-        const TILE_PX = LOW_POWER ? 256 : 512;
+        const TILE_PX = 512;
 
         /* Preallocated scratch */
         const _target = new THREE.Vector3();
@@ -8220,7 +8618,18 @@ async function initDesktop(Homepage) {
                 if (isHovering) {
                     const distance = _hitPoint.distanceTo(t.base);
                     const effectRadius = EFFECT_RADIUS_BASE + holdFactor * EFFECT_RADIUS_HOLD;
-                    const maxPush = (1.38 + holdFactor * 3.2) * protrusion;
+                    /* Both terms trimmed by 9% (1.38 -> 1.2558, 3.2 -> 2.912),
+                       so total travel scales by exactly 0.91 at every value of
+                       holdFactor rather than only at full extension. At maximum
+                       hold the nearest tile was coming far enough forward to
+                       read as a gimmick. This is the ONE place push distance is
+                       computed, so the trim reaches press-and-hold (boolean
+                       holdFactor) and Pulse (float holdFactor) identically, and
+                       applies on every device since `protrusion` — not this —
+                       is what carries the viewport adaptation. Tile scale-up,
+                       effect radius, sway and lerp rates are untouched: only
+                       how far the images project has changed. */
+                    const maxPush = (1.2558 + holdFactor * 2.912) * protrusion;
 
                     if (distance < effectRadius) {
                         pushed = true;
@@ -9342,8 +9751,13 @@ async function initDesktop(Homepage) {
     const contactOpen = () => contactBtn.classList.add('is-open');
     const contactClose = () => contactBtn.classList.remove('is-open');
 
-    contactBtn.addEventListener('mouseenter', contactOpen);
-    contactBtn.addEventListener('mouseleave', contactClose);
+    /* Same fix, same reasoning as #hp-contact-btn above: hover only for a
+       real mouse, so touch is left with just the click/keydown toggle below
+       instead of that toggle fighting a synthesised mouseenter. */
+    if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
+        contactBtn.addEventListener('mouseenter', contactOpen);
+        contactBtn.addEventListener('mouseleave', contactClose);
+    }
     contactBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         contactBtn.classList.toggle('is-open');
@@ -9525,6 +9939,35 @@ async function initDesktop(Homepage) {
 
 }
 
+/* ==========================================================================
+   WEBGL FAILURE NOTICE
+   --------------------------------------------------------------------------
+   Shown from two places: enterVault() when VaultBridge has already failed or
+   just settled into failure (see enterVault() above). Lives at module top
+   level, independent of both initDesktopHomepage() and initDesktop(), since
+   either one may need to trigger it and neither should depend on the other
+   having run first.
+   ========================================================================== */
+function showWebglNotice() {
+    const el = document.getElementById('webgl-notice');
+    if (!el) return;
+    el.classList.add('visible');
+    /* Deferred one tick so the SAME click that opened the notice (the Enter
+       The Vault press) doesn't immediately bubble into this listener and
+       close it again before the person has seen it. */
+    setTimeout(() => document.addEventListener('click', onWebglNoticeOutsideClick), 0);
+}
+function hideWebglNotice() {
+    const el = document.getElementById('webgl-notice');
+    if (el) el.classList.remove('visible');
+    document.removeEventListener('click', onWebglNoticeOutsideClick);
+}
+function onWebglNoticeOutsideClick(e) {
+    const el = document.getElementById('webgl-notice');
+    if (el && !el.contains(e.target)) hideWebglNotice();
+}
+document.getElementById('webgl-notice-close').addEventListener('click', hideWebglNotice);
+
 const __isMobile = document.documentElement.dataset.exp === 'mobile';
 if (__isMobile) {
     initMobile();
@@ -9532,7 +9975,21 @@ if (__isMobile) {
     /* Built first, synchronously, so the Profile page is on screen and fully
        interactive before initDesktop's CDN-dependent Vault setup even starts. */
     const Homepage = initDesktopHomepage();
-    initDesktop(Homepage);
+    /* THIS .catch() is the actual fix for the stuck "Loading…" button.
+       initDesktop is `async`, and was previously called with no .catch —
+       a synchronous throw inside an async function (new THREE.WebGLRenderer
+       included) becomes a rejected promise, and an unhandled one, which is
+       exactly the "Uncaught (in promise)" in the DevTools screenshot.
+       VaultBridge.markReady() — the only thing that ever cleared "Loading…"
+       — sits thousands of lines later in this same function and was simply
+       never reached. Routing the rejection into VaultBridge.fail() gives
+       enterVault() a real terminal state to resolve to instead. This also
+       catches any FUTURE error anywhere in the init chain, not just the
+       current renderer line. */
+    initDesktop(Homepage).catch((err) => {
+        console.error('[Vault] disabled — WebGL/graphics init failed:', err);
+        VaultBridge.fail(err);
+    });
 }
 </script>
 </body>
