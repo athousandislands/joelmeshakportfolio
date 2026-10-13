@@ -1,0 +1,115 @@
+/* Focused launch refinements; original design rules remain in desktop/mobile.css. */
+
+#copy-failure { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 10000; padding: 12px 20px; border-radius: 24px; background: #3f3f3f; color: #fff; font-size: 14px; }
+#copy-failure[hidden] { display: none; }
+/* A short desktop window needs room between the bio and the fixed entry control. */
+@media (orientation: landscape) and (max-width: 1100px), (orientation: landscape) and (max-height: 720px) {
+    #homepage { overflow-y: auto; touch-action: pan-y pinch-zoom; }
+    #hp-inner { top: 100px; left: 10vw; width: min(560px, 75vw); padding-bottom: 32px; }
+    #hp-bio { font-size: 15px; }
+    #hp-enter-btn { position: relative; display: flex; width: max-content; left: auto; bottom: auto; margin: 32px auto 40px; transform: none; }
+    #hp-enter-btn:hover { transform: translateY(-1px); }
+    #hp-inner { position: relative; top: 0; margin-top: 100px; }
+    #homepage:not(.arr-btns) #hp-enter-btn { transform: translateY(11px); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .hp-photo-inner, #mobile-root .photo-inner, .pulse-gesture-pulse, .pulse-orbit-spin { animation: none !important; }
+}
+/* Preserve the icon's appearance when using a real keyboard-operable button. */
+#mobile-root .gallery-play-btn { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+#mobile-root .profile-photo-inner { animation-duration: inherit; }
+#mobile-root, #mobile-root #carousel, #mobile-root #gallery-scroll { touch-action: pan-x pan-y pinch-zoom; }
+[role="button"]:focus-visible, .dom-card:focus-visible, #mobile-root .gallery-play-btn:focus-visible { outline: 2px solid #595959; outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) { #mobile-root .profile-photo-inner { animation: none !important; } }
+
+/* One mobile project transition coordinates artwork, title, caption and selection. */
+#mobile-root #home.project-switching #carousel,
+#mobile-root #home.project-switching #project-name,
+#mobile-root #home.project-switching #meta {
+    transition: opacity var(--project-change-duration, 180ms) cubic-bezier(0.4, 0, 0.2, 1);
+}
+#mobile-root #home.project-switching #tab-indicator {
+    transition: transform var(--project-change-duration, 180ms) cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease;
+}
+#mobile-root #home.project-hiding #carousel,
+#mobile-root #home.project-hiding #project-name,
+#mobile-root #home.project-hiding #meta { opacity: 0; }
+/* Returning control to a touch must restore the current image immediately. */
+#mobile-root #home.project-direct #carousel,
+#mobile-root #home.project-direct #project-name,
+#mobile-root #home.project-direct #meta { transition: none; }
+
+#mobile-root #project-name.ready { opacity: 1; }
+
+/* Mobile Mind Map: the existing Profile/Projects morph gains a glass orb. */
+#mobile-root #nav-mindmap-btn {
+    flex: 0 0 var(--tabbar-h);
+    width: var(--tabbar-h); height: var(--tabbar-h);
+    border-radius: 50%; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ui-grey); cursor: pointer;
+    opacity: 0; transform: scale(.92);
+    transition: opacity .5s ease, transform .5s var(--ease-out);
+}
+#mobile-root #nav-mindmap-btn.in { opacity: 1; transform: scale(1); }
+#mobile-root #nav-mindmap-btn:active { transform: scale(.94); }
+#mobile-root #nav-mindmap-btn svg { width: 23px; height: 23px; }
+#mobile-root #nav-mindmap-btn[aria-pressed="true"] { color: var(--ink); }
+#mobile-root #nav-mindmap-btn:focus-visible { outline: 2px solid var(--ui-grey); outline-offset: 2px; }
+/* Four project slots stay sensitive; only narrow screens need smaller slots
+   to make room for the two circular destinations without horizontal overflow. */
+@media (max-width: 380px) {
+    #mobile-root .tab-btn { flex-basis: 44px; width: 44px; }
+}
+#mobile-root #home[data-section="mindmap"] #profile-clock { opacity: 0; pointer-events: none; }
+/* The canvas spans Home, so moving cards cannot expose a rectangular edge
+   above the caption. Navigation remains in its own layer above the scene. */
+#mobile-root #mobile-mindmap-panel {
+    position: absolute; inset: 0;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .34s ease, visibility 0s linear .34s;
+}
+#mobile-root #home[data-section="mindmap"] #mobile-mindmap-panel {
+    opacity: 1; visibility: visible; pointer-events: auto;
+    transition: opacity .34s ease, visibility 0s;
+}
+#mobile-root #mobile-mindmap-stage {
+    position: absolute; inset: 0;
+    outline: none; touch-action: none;
+}
+#mobile-root #mobile-mindmap-stage:focus-visible { outline: 1px solid var(--ui-grey); outline-offset: -8px; }
+#mobile-root #mobile-mindmap-stage canvas { display: block; }
+#mobile-root #mobile-mindmap-loading, #mobile-root #mobile-mindmap-error {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px; text-align: center;
+    font-size: .8rem; color: var(--ink-soft);
+}
+#mobile-root #mobile-mindmap-loading { pointer-events: none; transition: opacity .5s ease; }
+#mobile-root #mobile-mindmap-error { z-index: 2; }
+#mobile-root #mobile-mindmap-error[hidden], #mobile-root #mobile-mindmap-caption [hidden], #mobile-root #mobile-mindmap-lite[hidden] { display: none; }
+#mobile-root #mobile-mindmap-error button { padding: 10px 18px; border-radius: 24px; color: var(--ink); cursor: pointer; }
+#mobile-root #mobile-mindmap-caption {
+    position: absolute; left: 0; right: 0;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(32px, calc(var(--app-mh) * .085), 72px));
+    min-height: 56px; padding: 0 var(--edge); text-align: center;
+    pointer-events: none;
+}
+#mobile-root #mobile-mindmap-caption p {
+    margin: 0; opacity: 0; transform: translateY(4px);
+    transition: opacity .6s ease, transform .6s var(--ease-soft);
+}
+#mobile-root #mobile-mindmap-caption p.shown { opacity: 1; transform: translateY(0); }
+#mobile-root #mobile-mindmap-hint { font-size: .86rem; font-weight: 500; color: var(--ink); }
+#mobile-root #mobile-mindmap-intro { font-size: .76rem; line-height: 1.6; color: var(--ink-soft); margin-top: 18px !important; }
+#mobile-root[data-orient="landscape"] #mobile-mindmap-caption { left: 70%; bottom: 42%; padding: 0 12px; }
+@media (prefers-reduced-motion: reduce) {
+    #mobile-root #mobile-mindmap-caption p { transition: none; transform: none; }
+}
+@media (min-width: 560px) {
+    #mobile-root[data-orient="landscape"] #home[data-section="mindmap"] #tabslot {
+        position: absolute;
+        top: calc(env(safe-area-inset-top, 0px) + 14px);
+        margin-top: 0;
+    }
+}

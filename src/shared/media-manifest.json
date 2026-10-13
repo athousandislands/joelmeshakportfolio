@@ -1,0 +1,447 @@
+{
+  "images": {
+    "assets/projects/a-thousand-islands/gallery/dynamic-forms.webp": {
+      "w": 2210,
+      "h": 1386,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/a-thousand-islands/gallery/spatial-experience.webp": {
+      "w": 2210,
+      "h": 1386,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/a-thousand-islands/gallery/visual-identity.webp": {
+      "w": 2210,
+      "h": 1386,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/bizaar.webp": {
+      "w": 1080,
+      "h": 1920,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/corteiz.png": {
+      "w": 519,
+      "h": 646,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/creator.png": {
+      "w": 662,
+      "h": 769,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/dreamers-residency.webp": {
+      "w": 3333,
+      "h": 4056,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/facade.webp": {
+      "w": 1080,
+      "h": 1920,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/hair.png": {
+      "w": 765,
+      "h": 800,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/hurricane.webp": {
+      "w": 4950,
+      "h": 6188,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/mirror.png": {
+      "w": 657,
+      "h": 820,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/self.png": {
+      "w": 636,
+      "h": 789,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/digital-art/gallery/surreal.webp": {
+      "w": 1080,
+      "h": 1920,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/branding/alex.png": {
+      "w": 839,
+      "h": 888,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/branding/athousandislandslogo.png": {
+      "w": 845,
+      "h": 894,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/branding/naivaalogo.png": {
+      "w": 817,
+      "h": 864,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/merchandise/home-front.webp": {
+      "w": 1414,
+      "h": 1694,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/merchandise/home-render.webp": {
+      "w": 1856,
+      "h": 2304,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/merchandise/training-front.webp": {
+      "w": 5500,
+      "h": 5500,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/merchandise/training-render.webp": {
+      "w": 1856,
+      "h": 2148,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/posters/amka.webp": {
+      "w": 1856,
+      "h": 2304,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/posters/dancelife.webp": {
+      "w": 3508,
+      "h": 2480,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/posters/dma.webp": {
+      "w": 1080,
+      "h": 1350,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/posters/film.webp": {
+      "w": 3376,
+      "h": 6000,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/posters/gaming1.webp": {
+      "w": 1080,
+      "h": 1350,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/posters/gaming2.webp": {
+      "w": 1836,
+      "h": 2295,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/graphic-design/collections/posters/screening.webp": {
+      "w": 4320,
+      "h": 5400,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/chokoleti/gallery/Chokoleti-description.webp": {
+      "w": 7063,
+      "h": 5008,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/chokoleti/gallery/Chokoleti2.webp": {
+      "w": 7063,
+      "h": 5008,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/chokoleti/gallery/chokoleti-hero.jpg": {
+      "w": 1170,
+      "h": 1450,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/chokoleti/gallery/hoodie.jpg": {
+      "w": 1170,
+      "h": 1450,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/chokoleti/gallery/mocha.jpg": {
+      "w": 1170,
+      "h": 1461,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/chokoleti/gallery/models.jpg": {
+      "w": 1170,
+      "h": 1463,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/nairobi-bags/gallery/bags.jpg": {
+      "w": 1940,
+      "h": 1217,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/slidr/gallery/black-slides.jpg": {
+      "w": 1170,
+      "h": 1453,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/slidr/gallery/slides.jpg": {
+      "w": 1170,
+      "h": 1460,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/slidr/gallery/slidr.webp": {
+      "w": 1541,
+      "h": 1899,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/slidr/gallery/white-slides.jpg": {
+      "w": 1170,
+      "h": 1448,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/slidr/gallery/white-slides2.jpg": {
+      "w": 1170,
+      "h": 1450,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/summer-land/gallery/summerland-description.webp": {
+      "w": 7063,
+      "h": 5008,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/summer-land/gallery/summerland2.webp": {
+      "w": 7063,
+      "h": 5008,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/projects/naivaa/collections/summer-land/gallery/summerland3.webp": {
+      "w": 2160,
+      "h": 2700,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/profilepic1.png": {
+      "w": 623,
+      "h": 578,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/profilepic2.png": {
+      "w": 624,
+      "h": 575,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    },
+    "assets/profilepic3.png": {
+      "w": 618,
+      "h": 577,
+      "v": [
+        480,
+        720,
+        1080
+      ]
+    }
+  },
+  "videos": {
+    "assets/projects/a-thousand-islands/videos/adaptive-motion.mp4": {
+      "mobile": "assets/_mobile/assets/projects/a-thousand-islands/videos/adaptive-motion.mp4",
+      "poster": "assets/_posters/assets/projects/a-thousand-islands/videos/adaptive-motion.webp"
+    },
+    "assets/projects/a-thousand-islands/videos/dynamic-forms.mp4": {
+      "mobile": "assets/_mobile/assets/projects/a-thousand-islands/videos/dynamic-forms.mp4",
+      "poster": "assets/_posters/assets/projects/a-thousand-islands/videos/dynamic-forms.webp"
+    },
+    "assets/projects/a-thousand-islands/videos/particle-engine.mp4": {
+      "mobile": "assets/_mobile/assets/projects/a-thousand-islands/videos/particle-engine.mp4",
+      "poster": "assets/_posters/assets/projects/a-thousand-islands/videos/particle-engine.webp"
+    },
+    "assets/projects/a-thousand-islands/videos/spatial-experience.mp4": {
+      "mobile": "assets/_mobile/assets/projects/a-thousand-islands/videos/spatial-experience.mp4",
+      "poster": "assets/_posters/assets/projects/a-thousand-islands/videos/spatial-experience.webp"
+    },
+    "assets/projects/a-thousand-islands/videos/visual-identity.mp4": {
+      "mobile": "assets/_mobile/assets/projects/a-thousand-islands/videos/visual-identity.mp4",
+      "poster": "assets/_posters/assets/projects/a-thousand-islands/videos/visual-identity.webp"
+    },
+    "assets/projects/a-thousand-islands/videos/voice-control.mp4": {
+      "mobile": "assets/_mobile/assets/projects/a-thousand-islands/videos/voice-control.mp4",
+      "poster": "assets/_posters/assets/projects/a-thousand-islands/videos/voice-control.webp"
+    },
+    "assets/projects/digital-art/videos/queen.webm": {
+      "mobile": "assets/_mobile/assets/projects/digital-art/videos/queen.mp4",
+      "poster": "assets/_posters/assets/projects/digital-art/videos/queen.webp"
+    },
+    "assets/projects/graphic-design/videos/alexandra-gathukia.mp4": {
+      "mobile": "assets/_mobile/assets/projects/graphic-design/videos/alexandra-gathukia.mp4",
+      "poster": "assets/_posters/assets/projects/graphic-design/videos/alexandra-gathukia.webp"
+    },
+    "assets/projects/naivaa/videos/green-bag.mp4": {
+      "mobile": "assets/_mobile/assets/projects/naivaa/videos/green-bag.mp4",
+      "poster": "assets/_posters/assets/projects/naivaa/videos/green-bag.webp"
+    }
+  }
+}
