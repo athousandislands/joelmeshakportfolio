@@ -637,7 +637,9 @@ export async function initDesktop(Homepage) {
     const FOLDER_FOV = 45;
     const FOLDER_CAM_Z = 80;
     const carouselScene = new THREE.Scene();
-    const carouselCam = new THREE.PerspectiveCamera(FOLDER_FOV, V.aspect, 0.1, 2000);
+    // These folders stay roughly 75–140 world units from this fixed camera.
+    // A scene-specific depth range avoids spending precision on empty space.
+    const carouselCam = new THREE.PerspectiveCamera(FOLDER_FOV, V.aspect, 10, 200);
     carouselCam.position.set(0, 0, FOLDER_CAM_Z);
 
     let envRT = null;
@@ -757,17 +759,12 @@ export async function initDesktop(Homepage) {
     }
 
     const extrudeSettings = { depth: 6, bevelEnabled: true, bevelSegments: 4, steps: 2, bevelSize: 1.5, bevelThickness: 1.5 };
-    const fileExtrudeSettings = { depth: 2, bevelEnabled: true, bevelSegments: 3, steps: 1, bevelSize: 1, bevelThickness: 1 };
 
     const sharedFrontMat = createGlassMaterial(true);
     const sharedBackMat = createGlassMaterial(false);
-    const fileMat1 = new THREE.MeshStandardMaterial({ color: 0xe6e6e6, roughness: 0.6, metalness: 0.1 });
-    const fileMat2 = new THREE.MeshStandardMaterial({ color: 0x989491, roughness: 0.6, metalness: 0.1 });
-    const fileMat3 = new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.6, metalness: 0.1 });
 
     const backGeo = new THREE.ExtrudeGeometry(createRoundedRect(33.33, 0, 642.73, 526.08, 50.49, 50.49), extrudeSettings);
     backGeo.center();
-    const fileGeo = new THREE.ExtrudeGeometry(createRoundedRect(0, 0, 345.17, 443.33, 29.3, 29.3), fileExtrudeSettings);
     const frontGeo = new THREE.ExtrudeGeometry(parseSVGPath("M617.68,533.23H94.07c-46.21,0-69.77-17.21-70.26-62.81-.01-.97-.05-1.94-.12-2.91L.13,170.68c-.09-1.11-.13-2.24-.13-3.35.08-45.49,3.86-64.97,49.99-64.97l290.42-2.38c35.71-2.38,59.51,90.46,104.74,92.84,57.1,3.01,168.89-1.13,221.38,4.76,8.94,1,15.7,3.69,20.93,6.96,10.53,6.59,17.27,17.85,18.64,30.2l.44,3.99c.3,2.71.33,5.45.1,8.17l-18.55,213.31c-.09,1.07-.14,2.15-.15,3.22-.54,45.65-24.1,69.8-70.26,69.8Z"), extrudeSettings);
 
     const thawArray = new Float32Array(5);
@@ -778,10 +775,7 @@ export async function initDesktop(Homepage) {
 
     const frontIM = new THREE.InstancedMesh(frontGeo, sharedFrontMat, 5);
     const backIM = new THREE.InstancedMesh(backGeo, sharedBackMat, 5);
-    const file1IM = new THREE.InstancedMesh(fileGeo, fileMat1, 5);
-    const file2IM = new THREE.InstancedMesh(fileGeo, fileMat2, 5);
-    const file3IM = new THREE.InstancedMesh(fileGeo, fileMat3, 5);
-    [frontIM, backIM, file1IM, file2IM, file3IM].forEach(im => {
+    [frontIM, backIM].forEach(im => {
         im.frustumCulled = false;
         im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     });
@@ -789,7 +783,7 @@ export async function initDesktop(Homepage) {
     const folders = [], hitBoxes = [];
     const carouselGroup = new THREE.Group();
     carouselScene.add(carouselGroup);
-    carouselGroup.add(frontIM, backIM, file1IM, file2IM, file3IM);
+    carouselGroup.add(frontIM, backIM);
 
     const hitBoxGeo = new THREE.BoxGeometry(750, 600, 100);
     const hitBoxMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -1224,9 +1218,6 @@ export async function initDesktop(Homepage) {
             };
             setIM(folder.userData.dummies.front, frontIM);
             setIM(folder.userData.dummies.back, backIM);
-            setIM(folder.userData.dummies.f1, file1IM);
-            setIM(folder.userData.dummies.f2, file2IM);
-            setIM(folder.userData.dummies.f3, file3IM);
 
             tempV.set(0, -385, 0);
             tempV.applyMatrix4(folder.matrixWorld);
@@ -1261,9 +1252,6 @@ export async function initDesktop(Homepage) {
         thawAttribute.needsUpdate = true;
         frontIM.instanceMatrix.needsUpdate = true;
         backIM.instanceMatrix.needsUpdate = true;
-        file1IM.instanceMatrix.needsUpdate = true;
-        file2IM.instanceMatrix.needsUpdate = true;
-        file3IM.instanceMatrix.needsUpdate = true;
 
         renderer.clear();
         renderer.render(orbScene, orbCam);
