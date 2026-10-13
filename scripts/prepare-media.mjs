@@ -4,7 +4,9 @@ import path from 'node:path';
 import { FOLDER_PREVIEWS } from '../src/desktop/folder-previews.js';
 
 const root = 'public';
+const previewsOnly = process.argv.includes('--previews-only');
 const manifest = { images: {}, videos: {} };
+const previewRevision = (await stat('src/desktop/folder-previews.js')).mtimeMs;
 const jobs = [];
 function run(command, args) {
     return new Promise((resolve, reject) => {
@@ -30,13 +32,14 @@ async function encode(source, target, options) {
     await mkdir(path.dirname(target), { recursive: true });
     try {
         const existing = await stat(target);
-        if (existing.size > 0 && existing.mtimeMs >= (await stat(source)).mtimeMs) return;
+        const revision = Math.max((await stat(source)).mtimeMs, target.includes('/_previews/') ? previewRevision : 0);
+        if (existing.size > 0 && existing.mtimeMs >= revision) return;
     } catch { /* Generate a missing or outdated rendition. */ }
     if (target.endsWith('.webp')) { await run('python3', ['scripts/encode-image.py', source, target]); return; }
     await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-threads', '1', '-i', source, ...options, '-threads', '1', target]);
 }
-const sources = await files('public/assets/projects');
-sources.push(...['1','2','3'].map(number => `public/assets/profilepic${number}.png`));
+const sources = previewsOnly ? [] : await files('public/assets/projects');
+if (!previewsOnly) sources.push(...['1','2','3'].map(number => `public/assets/profilepic${number}.png`));
 for (const source of sources) {
     const url = source.slice(root.length + 1);
     const stem = url.replace(/\.[^.]+$/, '');
@@ -62,8 +65,10 @@ await Promise.all(Array.from({ length: 3 }, async () => {
         if (completed % 30 === 0 || completed === jobs.length) console.log(`Media prepared: ${completed}/${jobs.length}`);
     }
 }));
+if (!previewsOnly) {
 await mkdir('public/assets/vendor/basis', { recursive: true });
 for (const name of ['basis_transcoder.js','basis_transcoder.wasm']) await copyFile(`node_modules/three/examples/jsm/libs/basis/${name}`, `public/assets/vendor/basis/${name}`);
 // A manifest is written only after all outputs succeed, so code never points at half a build.
 await writeFile('src/shared/media-manifest.json', JSON.stringify(manifest, null, 2) + '\n');
-console.log('Image variants, video renditions, folder previews and local transcoder are ready.');
+}
+console.log(previewsOnly ? 'Folder previews are ready.' : 'Image variants, video renditions, folder previews and local transcoder are ready.');

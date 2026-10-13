@@ -1,9 +1,11 @@
+// Stable, opaque portrait artwork wherever available. A Thousand Islands
+// has landscape sources only; its previews use the same portrait crop.
 export const FOLDER_PREVIEWS = [
     ['assets/projects/naivaa/collections/summer-land/gallery/summerland3.webp', 'assets/projects/naivaa/collections/chokoleti/gallery/chokoleti-hero.jpg', 'assets/projects/naivaa/collections/slidr/gallery/black-slides.jpg'],
     ['assets/projects/a-thousand-islands/gallery/dynamic-forms.webp', 'assets/projects/a-thousand-islands/gallery/spatial-experience.webp', 'assets/projects/a-thousand-islands/gallery/visual-identity.webp'],
-    ['assets/projects/digital-art/gallery/hair.png', 'assets/projects/digital-art/gallery/creator.png', 'assets/projects/digital-art/gallery/corteiz.png'],
-    ['assets/projects/graphic-design/collections/posters/amka.webp', 'assets/projects/graphic-design/collections/branding/naivaalogo.png', 'assets/projects/graphic-design/collections/merchandise/home-render.webp'],
-    ['assets/projects/mind-map/gallery/1.jpeg', 'assets/projects/mind-map/gallery/14.png', 'assets/projects/mind-map/gallery/66.png'],
+    ['assets/projects/digital-art/gallery/dreamers-residency.webp', 'assets/projects/digital-art/gallery/facade.webp', 'assets/projects/digital-art/gallery/bizaar.webp'],
+    ['assets/projects/graphic-design/collections/posters/amka.webp', 'assets/projects/graphic-design/collections/posters/dma.webp', 'assets/projects/graphic-design/collections/merchandise/home-render.webp'],
+    ['assets/projects/mind-map/gallery/1.jpeg', 'assets/projects/mind-map/gallery/23.JPG', 'assets/projects/mind-map/gallery/24.JPG'],
 ];
 
 // The folder bodies keep their existing instancing. Only the fifteen faces

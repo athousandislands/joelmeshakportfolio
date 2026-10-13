@@ -37,7 +37,7 @@ Generated media is committed, so ordinary installation/building does not require
 
 When adding or replacing artwork, run `npm run media`. This requires ffmpeg, ffprobe and Python 3 with Pillow/WebP support. It creates 480/720/1080-width image variants (without enlargement), muted mobile videos, posters and fifteen cropped folder thumbnails. It writes the media manifest only after every output succeeds. Repeat runs skip unchanged outputs.
 
-Folder preview choices live in `src/desktop/folder-previews.js`; changing these is a visual decision to review. The existing KTX2 files are retained. Three's matching Basis transcoder is self-hosted from its pinned package. Image fallback keeps 512px source bitmaps until final disposal so context restoration and re-entry work; compressed textures are the normal lower-memory path.
+Folder preview choices live in `src/desktop/folder-previews.js`; the choices stay fixed across visits, favor opaque portrait artwork, and avoid PNGs. A Thousand Islands has only landscape artwork, cropped to the same card shape. After changing these choices, run `npm run previews` to refresh only the fifteen thumbnails; changing the selection automatically invalidates their cached outputs. The existing KTX2 files are retained. Three's matching Basis transcoder is self-hosted from its pinned package. Image fallback keeps 512px source bitmaps until final disposal so context restoration and re-entry work; compressed textures are the normal lower-memory path.
 
 ## GitHub and production
 
