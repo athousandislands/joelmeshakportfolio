@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Page not found — Joel Meshak</title>
+<link rel="icon" href="/assets/favicon.ico" sizes="48x48">
+<link rel="icon" href="/assets/icon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" sizes="180x180">
+<meta name="theme-color" content="#CCCCCC">
+<meta name="robots" content="noindex">
+<style>
+    /*
+       Deliberately dependency-free: no WebGL, no video, no external script,
+       no font request beyond the system stack. This file's only job is to
+       always render correctly, including in the exact failure states (no
+       graphics acceleration, blocked CDN, offline) that the rest of the site
+       has to degrade gracefully around — it can't lean on any of that
+       machinery itself.
+
+       Tokens copied by value from the main site's :root rather than shared
+       via import, for the same reason: this page must survive completely on
+       its own.
+    */
+    :root {
+        --bg: #CCCCCC;
+        --ink: #2d2d2d;
+        --ui-grey: #595959;
+        --glass-fill: rgba(255, 255, 255, 0.43);
+        --glass-edge: rgba(255, 255, 255, 0.55);
+        --glass-spec: rgba(255, 255, 255, 0.44);
+        --glass-shadow: rgba(0, 0, 0, 0.05);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0; padding: 0;
+        width: 100%; height: 100%;
+        background: var(--bg);
+        font-family: -apple-system, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        overflow: hidden;
+    }
+    body {
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        text-align: center;
+        padding: 24px;
+        gap: 22px;
+    }
+    .code {
+        margin: 0;
+        font-size: clamp(3rem, 12vw, 5rem);
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        color: var(--ink);
+        line-height: 1;
+    }
+    .line {
+        margin: 0;
+        max-width: 380px;
+        font-size: clamp(0.95rem, 2.4vw, 1.05rem);
+        font-weight: 500;
+        line-height: 1.5;
+        color: var(--ui-grey);
+    }
+    /* Same fake-glass recipe as the rest of the site (fill + edge + inset
+       specular highlight + soft outer shadow + a diagonal sheen layer) —
+       not a new material, the same one. */
+    .home-btn {
+        position: relative;
+        isolation: isolate;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 6px;
+        padding: 13px 34px;
+        border-radius: 999px;
+        border: 1px solid var(--glass-edge);
+        background: var(--glass-fill);
+        box-shadow:
+            inset 0 1px 0 var(--glass-spec),
+            inset 0 -1px 0 rgba(0, 0, 0, 0.04),
+            0 6px 16px var(--glass-shadow);
+        color: var(--ink);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.2px;
+        text-decoration: none;
+        cursor: pointer;
+        /* The organic sway: same small-amplitude, uneven-timing shape as the
+           profile photo cards use, so it reads as this site's motion
+           language rather than a generic bounce. Kept subtle and slow so it
+           doesn't compete with the message above it. */
+        animation: btnSway 7.2s ease-in-out infinite;
+    }
+    .home-btn::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        border-radius: inherit;
+        opacity: 0.5;
+        background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.06) 40%, rgba(255, 255, 255, 0) 64%);
+    }
+    .home-btn:hover { transform: translateY(-1px); }
+    .home-btn:active { transform: translateY(0) scale(0.98); }
+    @keyframes btnSway {
+        0%, 100% { transform: translate(0, 0) rotate(0deg); }
+        34%      { transform: translate(0, -3px) rotate(-0.4deg); }
+        67%      { transform: translate(0, -1px) rotate(0.3deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .home-btn { animation: none; }
+    }
+</style>
+</head>
+<body>
+    <p class="code">404</p>
+    <p class="line">This page doesn't exist — the link may be out of date, or the address was mistyped.</p>
+    <a class="home-btn" href="/">Back Home</a>
+</body>
+</html>

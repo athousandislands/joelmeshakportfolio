@@ -1,0 +1,1395 @@
+        /* ==========================================================================
+           MOBILE STYLESHEET — everything scoped under #mobile-root.
+           ========================================================================== */
+        :root {
+            --bg: #CCCCCC;
+
+            --ink: #2d2d2d;
+            --ink-soft: rgba(45, 45, 45, 0.78);
+            --ink-faint: rgba(45, 45, 45, 0.42);
+
+            --glass-fill: rgba(255, 255, 255, 0.43);
+            --glass-edge: rgba(255, 255, 255, 0.55);
+            --glass-spec: rgba(255, 255, 255, 0.44);
+            --glass-shadow: rgba(0, 0, 0, 0.05);
+
+            --capsule-fill: rgba(0, 0, 0, 0.085);
+            --capsule-edge: rgba(255, 255, 255, 0.5);
+
+            --on-glass: #ffffff;
+
+            --edge: 20px;
+            --control-h: 36px;
+            --header-h: 56px;
+
+            /* --mvh is the real visible height (JS-written, tracks the URL bar) —
+               anything that must fit the screen uses --app-mh/--panel-h, not
+               raw vh. Derived vars live on #mobile-root, not :root, so
+               landscape's --tabbar-h override reaches them (a custom
+               property resolves in the scope where it's declared). */
+            --mvh: 1vh;           /* JS-overridden; this is the pre-JS fallback */
+            --mvw: 1vw;
+
+            --r-lg: 20px;
+            --r-md: 18px;
+
+            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-soft: cubic-bezier(0.33, 1, 0.68, 1);
+        }
+
+        /* Mobile home vertical rhythm. Declared HERE (on #mobile-root) so the
+           landscape block further down, which overrides --tabbar-h and the
+           gaps on this same element, correctly re-derives everything below
+           them. Every offset is derived from these, so the tab bar, the
+           panels under it and the profile stack move together instead of
+           being nudged individually. */
+        #mobile-root {
+            --app-mh: calc(var(--mvh) * 100);
+            /* Round 30: whole nav row taken down ~12% — it read as too
+               visually dominant at the old size. Every dependent measure
+               (panel-top, the round Profile button, the indicator) is derived
+               from this, so they all compact together. */
+            --tabbar-h: clamp(39px, calc(var(--app-mh) * 0.060), 46px);
+            --tab-gap-top: clamp(12px, calc(var(--app-mh) * 0.032), 28px);
+            --tab-gap-bottom: clamp(10px, calc(var(--app-mh) * 0.024), 22px);
+            /* Panels always start BELOW the bar. Previously they started
+               header+60px while the bar ran header+28 -> header+80, so the
+               heading and description sat under it. */
+            --panel-top: calc(var(--header-h) + env(safe-area-inset-top, 0px)
+                              + var(--tab-gap-top) + var(--tabbar-h) + var(--tab-gap-bottom));
+            --panel-bottom: env(safe-area-inset-bottom, 0px);
+            /* What's ACTUALLY left for panel content once the header, tab bar
+               and safe areas are taken out. Content that must not overflow is
+               sized as a fraction of this, so it shrinks on a small device
+               instead of running off the frame. */
+            --panel-h: calc(var(--app-mh) - var(--panel-top) - var(--panel-bottom));
+        }
+
+        #mobile-root, #mobile-root * { box-sizing: border-box; }
+
+        #mobile-root {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overscroll-behavior: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            overflow: hidden;
+            /* Double-tap zoom: not covered by the pinch gesture-listeners in BOOT
+               (different event entirely). `touch-action: manipulation` is the
+               standard fix — disables double-tap-zoom only, resolves across
+               descendants, and the narrower pan-x/pan-y on individual
+               scrollers still further restrict their own regions. */
+            touch-action: manipulation;
+        }
+
+        /* ==========================================================================
+           1. FAKE GLASS
+           ========================================================================== */
+        #mobile-root .glass {
+            position: relative;
+            background: var(--glass-fill);
+            border: 1px solid var(--glass-edge);
+            box-shadow:
+                inset 0 1px 0 var(--glass-spec),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.04),
+                0 2px 6px var(--glass-shadow);
+            isolation: isolate;
+        }
+        #mobile-root .glass::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.5;
+            background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.06) 40%, rgba(255, 255, 255, 0) 64%);
+        }
+        #mobile-root .glass > * { position: relative; z-index: 1; }
+
+        #mobile-root .capsule {
+            background: var(--capsule-fill);
+            border: 1px solid var(--capsule-edge);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 1px 4px rgba(0, 0, 0, 0.08);
+        }
+
+        /* ==========================================================================
+           2. HEADER
+           ========================================================================== */
+        #mobile-root #header {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+            padding: 0 var(--edge);
+            padding-top: calc(env(safe-area-inset-top, 0px) + 14px);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            z-index: 400;
+            pointer-events: none;
+        }
+        #mobile-root #header > * { pointer-events: auto; }
+
+        #mobile-root #header-right {
+            position: absolute;
+            top: calc(env(safe-area-inset-top, 0px) + 14px);
+            right: var(--edge);
+            pointer-events: none;
+        }
+        #mobile-root #header-right > * { pointer-events: auto; }
+
+        /* The switcher is now DRAGGABLE as well as tappable: grab the thumb and
+           slide it across to change page. touch-action: pan-y keeps vertical
+           gestures free while claiming horizontal ones. */
+        #mobile-root #switcher {
+            position: relative;
+            display: flex;
+            align-items: center;
+            height: var(--control-h);
+            padding: 3px;
+            border-radius: 999px;
+            touch-action: pan-y;
+            opacity: 0;
+            transform: translateY(-6px);
+            transition: opacity 0.5s ease, transform 0.5s var(--ease-out);
+        }
+        #mobile-root #switcher.ready { opacity: 1; transform: translateY(0); }
+        #mobile-root[data-page="gallery"] #switcher {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-8px) scale(0.96);
+        }
+
+        #mobile-root #switch-thumb {
+            position: absolute;
+            top: 3px; left: 3px;
+            height: calc(100% - 6px);
+            border-radius: 999px;
+            z-index: 1;
+            transition: transform 0.3s var(--ease-out), width 0.3s var(--ease-out);
+        }
+
+        #mobile-root .switch-btn {
+            position: relative;
+            z-index: 2;
+            appearance: none;
+            border: 0;
+            background: none;
+            font: inherit;
+            font-size: 13.5px;
+            font-weight: 500;
+            letter-spacing: 0.1px;
+            color: var(--ui-grey);
+            padding: 0 15px;
+            height: 100%;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: color 0.28s ease;
+        }
+        /* No selected-state recolour: Home/Gallery hold one gray in every
+           state and the sliding capsule thumb underneath is the affordance,
+           matching how the project tab icons already work. */
+        #mobile-root .switch-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+        /* ---- Contact ---- */
+        #mobile-root #contact {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 92px;
+            height: var(--control-h);
+            border-radius: 999px;
+            overflow: hidden;
+            cursor: pointer;
+            opacity: 0;
+            transform: translateY(-6px);
+            transition:
+                width 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+                height 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+                border-radius 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.5s ease,
+                transform 0.5s var(--ease-out);
+        }
+        #mobile-root #contact.ready { opacity: 1; transform: translateY(0); }
+        #mobile-root #contact.is-open {
+            width: 160px;
+            height: 178px;
+            border-radius: var(--r-lg);
+            cursor: default;
+            background: rgba(238, 238, 238, 0.97);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.7),
+                0 10px 30px rgba(0, 0, 0, 0.13),
+                0 2px 8px rgba(0, 0, 0, 0.07);
+        }
+        #mobile-root #contact.is-open::before { opacity: 0.25; }
+        #mobile-root[data-page="gallery"] #contact {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #mobile-root #contact-label {
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: var(--control-h);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13.5px;
+            font-weight: 500;
+            color: var(--ui-grey);
+            transition: opacity 0.2s ease;
+        }
+        #mobile-root #contact.is-open #contact-label { opacity: 0; }
+
+        #mobile-root #contact-list {
+            position: absolute;
+            inset: 0;
+            padding: 14px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease 0.16s;
+        }
+        #mobile-root #contact.is-open #contact-list { opacity: 1; pointer-events: auto; }
+
+        #mobile-root .contact-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 9px 12px;
+            border-radius: 12px;
+            color: var(--ui-grey);
+            font-size: 14px;
+            white-space: nowrap;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: background 0.18s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease;
+        }
+        #mobile-root #contact.is-open .contact-item { opacity: 1; transform: translateY(0); }
+        #mobile-root #contact.is-open .contact-item:nth-child(1) { transition-delay: 0.20s; }
+        #mobile-root #contact.is-open .contact-item:nth-child(2) { transition-delay: 0.25s; }
+        #mobile-root #contact.is-open .contact-item:nth-child(3) { transition-delay: 0.30s; }
+        #mobile-root #contact.is-open .contact-item:nth-child(4) { transition-delay: 0.35s; }
+        #mobile-root .contact-item:active { background: rgba(0, 0, 0, 0.06); }
+
+        #mobile-root .contact-item svg {
+            width: 16px; height: 16px; flex: 0 0 16px;
+            stroke: currentColor; fill: none;
+            stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+        }
+        #mobile-root .be-logo {
+            width: 16px; height: 16px; flex: 0 0 16px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px; letter-spacing: -0.5px;
+            line-height: 1;
+        }
+        #mobile-root .item-text { position: relative; flex: 1; }
+        #mobile-root .item-text .copied { position: absolute; left: 0; top: 0; color: #1a9e46; opacity: 0; transform: translateY(3px); transition: opacity 0.22s ease, transform 0.22s ease; }
+        #mobile-root .item-text .original { transition: opacity 0.22s ease, transform 0.22s ease; }
+        #mobile-root .contact-item.copied .original { opacity: 0; transform: translateY(-3px); }
+        #mobile-root .contact-item.copied .copied { opacity: 1; transform: translateY(0); }
+
+        /* ---- Back button (Gallery only) ---- */
+        #mobile-root #back-btn {
+            align-self: flex-start;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            height: var(--control-h);
+            padding: 0 16px 0 13px;
+            border-radius: 999px;
+            cursor: pointer;
+            font-size: 13.5px;
+            font-weight: 500;
+            color: var(--ui-grey);
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-6px);
+            transition: opacity 0.5s ease, transform 0.5s var(--ease-out);
+        }
+        #mobile-root[data-page="gallery"] #back-btn {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+            /* Delay lives only on the arriving state, so leaving Gallery
+               still uses the undelayed base rule and the button clears
+               immediately on the way out. */
+            transition-delay: 0.16s;
+        }
+        #mobile-root #back-btn svg {
+            width: 15px; height: 15px;
+            stroke: currentColor; fill: none;
+            stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        /* ==========================================================================
+           3. PAGES — 0.42s cross-fade so the gallery's exit and home's
+           staggered arrival overlap instead of one cutting off the other.
+           ========================================================================== */
+        #mobile-root .page {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.42s ease;
+        }
+        #mobile-root .page.active { opacity: 1; pointer-events: auto; }
+
+        /* Home arrival stagger. Transform-only keyframes, so they can't fight the
+           .ready/.in opacity flags each block already manages for itself. */
+        @keyframes homeRise {
+            from { transform: translateY(10px); }
+            to   { transform: translateY(0); }
+        }
+        #mobile-root #home.arrive #tabslot      { animation: homeRise 0.5s var(--ease-out) both; }
+        #mobile-root #home.arrive #project-name { animation: homeRise 0.5s var(--ease-out) 0.06s both; }
+        #mobile-root #home.arrive #carousel     { animation: homeRise 0.5s var(--ease-out) 0.12s both; }
+        #mobile-root #home.arrive #meta         { animation: homeRise 0.5s var(--ease-out) 0.18s both; }
+
+        /* ==========================================================================
+           4. HOME
+           ========================================================================== */
+        #mobile-root #home {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+        }
+
+        /* Fake-glass, not backdrop-filter: this row sits above --panel-top so
+           only flat background ever shows through it — real blur bought
+           nothing visually while repainting every frame of the width morph. */
+
+        /* The two nav controls sit in one centred row. Centring is what makes
+           the morph read as a single object: #tabbar's width is the ONLY
+           animated length, and flex centring slides #nav-profile-btn left by
+           exactly half the growth, on the same frames and the same easing,
+           with nothing to keep in sync in JS. */
+        #mobile-root #tabslot {
+            position: relative;
+            width: 100%;
+            height: var(--tabbar-h);
+            flex: 0 0 var(--tabbar-h);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            margin-top: var(--tab-gap-top);
+            z-index: 10;
+        }
+
+        #mobile-root #nav-profile-btn {
+            flex: 0 0 auto;
+            width: var(--tabbar-h);
+            height: var(--tabbar-h);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--ui-grey);
+            cursor: pointer;
+            opacity: 0;
+            transform: scale(0.92);
+            transition: opacity 0.5s ease, transform 0.5s var(--ease-out);
+            -webkit-tap-highlight-color: transparent;
+        }
+        #mobile-root #nav-profile-btn.in { opacity: 1; transform: scale(1); }
+        #mobile-root #nav-profile-btn:active { transform: scale(0.94); }
+        #mobile-root #nav-profile-btn:focus-visible { outline: 2px solid var(--ui-grey); outline-offset: 2px; }
+        /* Same optical correction the icon already had as a tab: this glyph
+           fills its own viewBox more than the others, so it needs less box. */
+        #mobile-root #nav-profile-btn svg { width: 17px; height: 17px; fill: currentColor; }
+
+        /* #tabbar IS the morph. Collapsed it is a "Projects" pill; expanded it
+           is the project tab bar it has always been. The icons are laid out
+           at full width in BOTH states — overflow:hidden is what hides them,
+           not a layout change — so btns[i].offsetLeft stays valid while
+           collapsed and the indicator never needs re-measuring after the
+           transition. Width is the single animated property. */
+        #mobile-root #tabbar {
+            position: relative;
+            display: flex;
+            align-items: center;
+            height: var(--tabbar-h);
+            /* Horizontal padding 1px larger than vertical: the indicator's
+               end-of-track margin is (padding - IND_PAD/2), so matching this
+               to the vertical inset (3px) needs 1px more horizontal padding
+               than IND_PAD/2 alone would give. padRight is read live by
+               Tab.measure(), so this isn't hard-coded twice. */
+            padding: 5px 6px;
+            border-radius: 999px;
+            overflow: hidden;
+            flex: 0 0 auto;
+            /* Both widths are measured from real layout in Tab.measure();
+               these fallbacks only cover the frames before it first runs,
+               while the bar is still at opacity 0. */
+            width: var(--tabbar-w-closed, 122px);
+            cursor: pointer;
+            opacity: 0;
+            transform: scale(0.92);
+            touch-action: pan-x;
+            transition: opacity 0.5s ease,
+                        transform 0.5s var(--ease-out),
+                        width 0.58s var(--ease-out);
+            -webkit-tap-highlight-color: transparent;
+        }
+        #mobile-root #home[data-section="projects"] #tabbar {
+            width: var(--tabbar-w-open, 240px);
+            cursor: default;
+        }
+        #mobile-root #tabbar:focus-visible { outline: 2px solid var(--ui-grey); outline-offset: 2px; }
+
+        /* Label and icon group cross-fade against each other, offset so the
+           outgoing one is gone before the incoming one arrives — otherwise
+           they overlap visibly in the middle of the width transition. */
+        #mobile-root #projects-label {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.4px;
+            color: var(--ui-grey);
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 2;
+            opacity: 1;
+            transition: opacity 0.24s ease 0.12s;
+        }
+        #mobile-root #home[data-section="projects"] #projects-label {
+            opacity: 0;
+            transition: opacity 0.16s ease 0s;
+        }
+
+        /* Opacity gates the group here, not on .tab-btn, so it can't fight the
+           per-button iconLand animation. Deliberately not position:relative —
+           that would move the buttons' offsetParent off #tabbar and break
+           the indicator's offsetLeft math (z-index still works unpositioned). */
+        #mobile-root #tab-icons {
+            /* MUST stay unpositioned — .glass > * sets position:relative on every
+               direct child, which would move the buttons' offsetParent off
+               #tabbar and drop its padding out of every offsetLeft read by
+               the indicator and Tab.measure(). z-index still works unpositioned. */
+            position: static;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            height: 100%;
+            flex: 0 0 auto;
+            z-index: 2;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+        #mobile-root #home[data-section="projects"] #tab-icons {
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0.3s ease 0.16s;
+        }
+        #mobile-root #tabbar.in { opacity: 1; transform: scale(1); }
+
+        /* Inset 3px all round: top/height here, ±IND_PAD/2 horizontally in Tab
+           (JS, since width is measured there) — paired with the bar's
+           asymmetric padding (see #tabbar) so both axes match exactly. */
+        #mobile-root #tab-indicator {
+            position: absolute;
+            top: 3px; left: 0;
+            height: calc(100% - 6px);
+            border-radius: 999px;
+            z-index: 1;
+            opacity: 0;
+            transition: transform 0.3s var(--ease-out), opacity 0.3s ease, width 0.2s ease;
+        }
+        /* The capsule only exists in the expanded state — while collapsed it
+           would read as a grey blob sitting behind the "Projects" label. */
+        #mobile-root #home[data-section="projects"] #tabbar.in #tab-indicator { opacity: 1; }
+        #mobile-root #tabbar.dragging #tab-indicator { transition: none; }
+
+        #mobile-root .tab-btn {
+            position: relative;
+            z-index: 2;
+            appearance: none;
+            border: 0;
+            background: none;
+            padding: 0;
+            width: 50px;
+            /* Must not shrink: the bar is a fixed-width flex container while
+               collapsed, and a squashed button would corrupt the offsetLeft
+               values the indicator and the width measurement both read. */
+            flex: 0 0 50px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--ui-grey);
+            opacity: 0;
+            transform: translateY(-8px) scale(0.82);
+        }
+        #mobile-root #tabbar.icons-in .tab-btn { animation: iconLand 0.42s var(--ease-out) forwards; }
+        @keyframes iconLand {
+            from { opacity: 0; transform: translateY(-8px) scale(0.82); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        /* No colour transition: the icons never change colour, so there is
+           nothing to animate. */
+        #mobile-root .tab-btn svg { width: 21px; height: 21px; fill: currentColor; }
+        /* Optical correction: Naivaa's and A Thousand Islands' source artwork
+           carries more internal padding relative to its own viewBox, so at
+           identical box sizes they read visibly smaller than the other glyphs.
+           Profile's glyph is the opposite — it fills its box, so it needs less. */
+        #mobile-root .tab-btn.icon-naivaa svg,
+        #mobile-root .tab-btn.icon-a-thousand-islands svg { width: 28px; height: 28px; }
+        #mobile-root .tab-btn.icon-profile svg { width: 17px; height: 17px; }
+        /* Icons stay one flat var(--ui-grey) in every state, deliberately with
+           no aria-selected colour rule — a per-icon colour swap has to keep
+           up with rapid state changes and reads as broken when it doesn't.
+           The sliding indicator is the only navigation feedback. */
+        #mobile-root .tab-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 999px; }
+
+        /* ==========================================================================
+           PROFILE SECTION (mobile home)
+           --------------------------------------------------------------------------
+           Shown when the Profile tab is active; the carousel blocks are hidden in
+           that state and vice-versa, driven by #home[data-section].
+           ========================================================================== */
+        /* visibility/opacity, not display:none — display:none has no layout
+           box, so slide widths would measure zero while Profile is active
+           (the boot state), leaving slideW stuck at its 1px fallback and
+           every jumpTo() target near 0. visibility:hidden keeps it measurable. */
+        #mobile-root #profile-panel,
+        #mobile-root #projects-panel {
+            position: absolute;
+            left: 0; right: 0;
+            top: var(--panel-top);
+            bottom: var(--panel-bottom);
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.34s ease, visibility 0s linear 0.34s;
+        }
+        #mobile-root #home[data-section="profile"] #profile-panel,
+        #mobile-root #home[data-section="projects"] #projects-panel {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            transition: opacity 0.34s ease, visibility 0s linear 0s;
+        }
+        /* The clock belongs to the Profile section only. */
+        #mobile-root #home[data-section="projects"] #profile-clock {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #mobile-root #profile-clock { transition: opacity 0.55s ease, transform 0.6s var(--ease-out); }
+
+        #mobile-root #profile-panel {
+            padding: 0 26px;
+            min-height: 0;
+            /* Deliberately no overflow property (`visible`). This sibling covers the
+               same rect as #projects-panel, which holds the carousel's native
+               scroll surface — any overflow value here creates a second
+               scroll/stacking layer over it, which caused two separate touch
+               freezes in earlier passes. Content is sized against --panel-h
+               specifically so it fits without needing a safety net. */
+        }
+
+        /* ---- photo stack ----
+           Clustered: three cards fanned behind each other. Expanded: a flat row.
+           Both states are plain CSS transforms on the same three elements, so the
+           transition between them is a single interpolation with nothing to
+           orchestrate in JS. */
+        /* Fixed height in both states so expanding never reflows the bio below
+           — cards are absolutely positioned inside this box. --pf-card is
+           the single source of truth for scale, bounded by panel height and
+           viewport width so a small phone scales the whole cluster down
+           proportionally; every offset below is a fraction of it. */
+        #mobile-root #profile-stack {
+            --pf-card: min(124px, calc(var(--panel-h) * 0.26), calc(var(--mvw) * 40));
+            position: relative;
+            width: 100%;
+            /* Tight to the lowest card (clustered: 0.288 + 1 = 1.288 cards)
+               so the box isn't padding out dead space above the bio. Fixed in
+               both states — expansion must never reflow. */
+            height: calc(var(--pf-card) * 1.317);
+            /* Scales with the available panel height rather than raw vh, with
+               a floor that keeps the cluster clear of the nav tab above. */
+            margin-top: clamp(12px, calc(var(--panel-h) * 0.042), 34px);
+            flex: 0 0 auto;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            /* Arrival stage 2 — the stack settles as one body. Safe to put a
+               transform here: the cards are absolutely positioned against
+               this element already, so they ride it without their own fan
+               transforms being touched. */
+            transform: translateY(16px);
+            transition: transform 0.62s var(--ease-out);
+        }
+        #mobile-root.arr-tiles #profile-stack { transform: translateY(0); }
+        /* Per-card entrance animates ONLY opacity. It therefore cannot fight
+           the fan/expand transform on the card or the sway animation running
+           on its inner wrapper, and animation-delay is a separate property
+           from the transition-delay the expand/collapse choreography uses. */
+        #mobile-root.arr-tiles .profile-photo { animation: tileArriveM 0.46s ease forwards; }
+        #mobile-root.arr-tiles .profile-photo:nth-child(3) { animation-delay: 0s; }
+        #mobile-root.arr-tiles .profile-photo:nth-child(2) { animation-delay: 0.09s; }
+        #mobile-root.arr-tiles .profile-photo:nth-child(1) { animation-delay: 0.18s; }
+        @keyframes tileArriveM { from { opacity: 0; } to { opacity: 1; } }
+        #mobile-root .profile-photo {
+            opacity: 0;
+            position: absolute;
+            top: 0; left: 0;
+            width: var(--pf-card);
+            height: var(--pf-card);
+            border-radius: 14%;
+            overflow: hidden;
+            background: #bdbdbd;
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.20);
+            transition: transform 0.62s var(--ease-out), width 0.62s var(--ease-out), height 0.62s var(--ease-out);
+            will-change: transform;
+        }
+        #mobile-root .profile-photo img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            display: block;
+            pointer-events: none;
+        }
+        /* Clustered — back to front, each slightly offset and rotated. The sway
+           animation is applied to an inner wrapper so it composes with, rather
+           than overwrites, the positioning transform above. Offsets are
+           fractions of --pf-card, so the fan keeps its exact proportions at
+           whatever size the card resolves to on this device. */
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(1) { transform: translate(calc(var(--pf-card) * 0.288), calc(var(--pf-card) * 0.028)) rotate(7deg); z-index: 1; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(2) { transform: translate(calc(var(--pf-card) * 0.190), calc(var(--pf-card) * 0.141)) rotate(3.5deg); z-index: 2; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(3) { transform: translate(0, calc(var(--pf-card) * 0.288)) rotate(0deg); z-index: 3; }
+        /* Expanded — flat row, no sway (movement stops once they settle). */
+        #mobile-root #profile-stack.is-expanded { height: calc(var(--pf-card) * 1.317); }
+        /* Explicit width/height, not width:auto+aspect-ratio — auto is discrete
+           and snaps mid-transition. 0.7521 = 1.09 x 0.69, same ratio as
+           before. Row offsets are fixed --pf-card multiples, not percentages
+           of the animating box, so the path is a straight line. Card size
+           142->124px; gap widened to ~12% of card width for breathing room. */
+        #mobile-root #profile-stack.is-expanded .profile-photo {
+            width: calc(var(--pf-card) * 0.7521);
+            height: calc(var(--pf-card) * 1.09);
+            border-radius: 13%;
+        }
+        /* Rear cards open outward first, front portrait settles last —
+           delays live on the children so the transition itself carries the
+           sequence with nothing orchestrated in JS. */
+        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(1) { transform: translate(calc(var(--pf-card) * 1.6847), calc(var(--pf-card) * 0.19)) rotate(0deg); transition-delay: 0s; }
+        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(2) { transform: translate(calc(var(--pf-card) * 0.8424), calc(var(--pf-card) * 0.19)) rotate(0deg); transition-delay: 0.04s; }
+        #mobile-root #profile-stack.is-expanded .profile-photo:nth-child(3) { transform: translate(0, calc(var(--pf-card) * 0.19)) rotate(0deg); transition-delay: 0.16s; }
+        /* Collapsing reverses it — the portrait moves back over them first. */
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(3) { transition-delay: 0s; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(2) { transition-delay: 0.08s; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(1) { transition-delay: 0.14s; }
+
+        /* Organic sway — only while clustered. Three different durations and
+           delays keep the three cards from ever syncing up, which is what sells
+           it as organic rather than mechanical. Transform-only, so it stays on
+           the compositor and costs effectively nothing. */
+        /* Overfilled so the sway can never expose the card's own background at
+           the edges — the inner is what animates, and it's inside overflow:hidden. */
+        /* Sway keyframes are scoped to .is-clustered, so expanding removes the
+           animation outright and the wrapper reverts to base in one frame —
+           this transition eases that revert instead. Can't fight the sway
+           itself (an animation always wins over a transition), so it only
+           ever applies once the animation is already gone. */
+        #mobile-root .profile-photo-inner {
+            width: 116%; height: 116%; margin: -8% 0 0 -8%;
+            transition: transform 0.42s var(--ease-out);
+        }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(1) .profile-photo-inner { animation: profileSwayA 6.4s ease-in-out infinite; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(2) .profile-photo-inner { animation: profileSwayB 8.1s ease-in-out -2.7s infinite; }
+        #mobile-root #profile-stack.is-clustered .profile-photo:nth-child(3) .profile-photo-inner { animation: profileSwayC 5.6s ease-in-out -3.9s infinite; }
+        /* Three stops rather than two: the extra waypoint means the return leg
+           doesn't retrace the outbound one, which is what stops a loop this
+           short from reading as a mechanical back-and-forth. Durations stay
+           mutually prime-ish so the three cards never sync up. */
+        @keyframes profileSwayA {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            34%      { transform: translate(-5px, -8px) rotate(-1.9deg); }
+            67%      { transform: translate(3px, -3px) rotate(0.8deg); }
+        }
+        @keyframes profileSwayB {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            40%      { transform: translate(7px, -6px) rotate(1.7deg); }
+            72%      { transform: translate(-2px, 3px) rotate(-0.9deg); }
+        }
+        @keyframes profileSwayC {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            45%      { transform: translate(-5px, 6px) rotate(-1.5deg); }
+            78%      { transform: translate(4px, 2px) rotate(0.9deg); }
+        }
+
+        /* ---- bio ---- */
+        #mobile-root #profile-bio {
+            /* Gap and type both track the real available panel height, so the
+               bio tightens on a short device instead of overflowing it —
+               bounded at both ends so it never collapses or grows out of
+               proportion with the cluster above. */
+            margin: clamp(14px, calc(var(--panel-h) * 0.05), 29px) 0 0;
+            font-size: clamp(0.79rem, calc(var(--panel-h) * 0.032), 0.88rem);
+            font-weight: 500;
+            line-height: 1.52;
+            /* Naivaa / A Thousand Islands keep their own .profile-link colour
+               rule below — only the surrounding body copy moves. */
+            color: var(--ui-grey);
+            white-space: pre-line;
+            /* Arrival stage 3 — fade with a sub-2% scale-up. */
+            opacity: 0;
+            transform: scale(0.984);
+            transform-origin: left center;
+            transition: opacity 0.6s ease, transform 0.76s var(--ease-out);
+        }
+        #mobile-root.arr-bio #profile-bio { opacity: 1; transform: scale(1); }
+        #mobile-root .profile-link {
+            color: #ffffff;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+        #mobile-root .profile-link:active { color: var(--ink); }
+        /* Single span rather than Contact's two-span swap, so confirmation is
+           a colour flash in the same green Contact uses. */
+        #mobile-root .profile-link.copied { color: #1a9e46; }
+
+        /* Copy confirmation bubble — same restrained, darker grey-tinted glass
+           as the desktop equivalent (#hp-copied), so both platforms read as
+           one aesthetic. The colour flash on the link alone isn't sufficient
+           feedback; this makes the copy unmistakable. */
+        #mobile-root #m-copied {
+            position: fixed;
+            z-index: 500;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(205, 205, 205, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.2px;
+            color: #2d2d2d;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(6px) scale(0.96);
+            transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #mobile-root #m-copied.visible { opacity: 1; transform: translateY(0) scale(1); }
+        #mobile-root #m-copied svg {
+            width: 13px; height: 13px;
+            fill: none; stroke: #555555;
+            stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        /* ---- clock ---- */
+        #mobile-root #profile-clock {
+            position: absolute;
+            left: 0; right: 0;
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--ink);
+            pointer-events: none;
+            /* Arrival stage 4 — last in, once the bio has resolved. */
+            opacity: 0;
+            transform: translateY(9px);
+        }
+        /* Lower specificity (2 ids + class) than the projects-section rule
+           above (3 ids + attribute), so switching to Projects still hides the
+           clock exactly as before. */
+        #mobile-root.arr-clock #profile-clock { opacity: 1; transform: translateY(0); }
+        #mobile-root #clock-place { color: #ffffff; }
+
+        /* ---- project name ---- */
+        #mobile-root #project-name {
+            margin-top: 0;
+            margin-bottom: clamp(4px, calc(var(--panel-h) * 0.016), 10px);
+            flex: 0 0 auto;
+            font-size: clamp(1.05rem, calc(var(--panel-h) * 0.046), 1.28rem);
+            font-weight: 600;
+            letter-spacing: 0.1px;
+            color: var(--on-glass);
+            text-align: center;
+            min-height: 1.4em;
+            opacity: 0;
+            transition: opacity 0.28s ease, transform 0.28s var(--ease-soft);
+        }
+        #mobile-root #project-name.swap { opacity: 0; transform: translateY(-4px); }
+
+        /* ---- carousel ---- */
+        #mobile-root #carousel {
+            position: relative;
+            flex: 1 1 auto;
+            width: 100%;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: contain;
+            scrollbar-width: none;
+            touch-action: pan-x;
+            opacity: 0;
+            transition: opacity 0.55s ease;
+        }
+        #mobile-root #carousel.ready { opacity: 1; }
+        #mobile-root #carousel::-webkit-scrollbar { display: none; }
+        #mobile-root #carousel.tweening { scroll-snap-type: none; }
+
+        /* Live scroll container only while its panel is the active section.
+           visibility:hidden (deliberate) doesn't stop #carousel being a real
+           scroller — built inside a hidden subtree on Profile-boot, WebKit
+           materialises a broken accelerated layer that covers
+           #profile-panel's rect and swallows touches meant for the cluster.
+           The first tap's own will-change transition materialises it,
+           eating every touch after; a Gallery round-trip only "fixes" it via
+           #home's opacity cycle rebuilding the layer tree. Fix: not a
+           scroller outside `projects`, so no layer builds from hidden state.
+           enterSection() re-applies scrollLeft since a non-scroller can't
+           retain it. */
+        #mobile-root #home:not([data-section="projects"]) #carousel {
+            overflow: hidden;
+            -webkit-overflow-scrolling: auto;
+        }
+
+        /* Full-width slides: only the active image is ever visible, sized to
+           whatever container #carousel actually is — 100% of the viewport in
+           portrait, 100% of the left grid column in landscape (see the
+           LANDSCAPE section below). No neighbour peeking at the edges. */
+        #mobile-root .slide {
+            flex: 0 0 100%;
+            width: 100%;
+            height: 100%;
+            padding: 0 var(--edge);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            scroll-snap-align: center;
+            scroll-snap-stop: normal;
+        }
+
+        #mobile-root .frame {
+            position: relative;
+            width: 100%;
+            height: 86%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #mobile-root .frame img {
+            display: block;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: var(--r-lg);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        #mobile-root .frame img.in { opacity: 1; }
+        #mobile-root .frame img.no-round { border-radius: 0; }
+
+        /* ---- meta: collection + description ---- */
+        #mobile-root #meta {
+            flex: 0 0 auto;
+            width: 100%;
+            /* Sized against the real available panel height, so the
+               description block keeps its share of a short screen instead of
+               being squeezed out by a fixed pixel figure. */
+            height: clamp(112px, calc(var(--panel-h) * 0.30), 148px);
+            padding: clamp(10px, calc(var(--panel-h) * 0.028), 18px) var(--edge) 0;
+            overflow: hidden;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        #mobile-root #meta.ready { opacity: 1; }
+        #mobile-root #collection,
+        #mobile-root #description {
+            transition: opacity 0.28s ease, transform 0.28s var(--ease-soft);
+        }
+        #mobile-root #collection.swap,
+        #mobile-root #description.swap { opacity: 0; transform: translateY(5px); }
+        #mobile-root #collection {
+            font-size: 0.86rem;
+            font-weight: 500;
+            color: var(--ink);
+            margin-bottom: 7px;
+        }
+        #mobile-root #position-dots {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            height: 8px;
+            margin-bottom: 9px;
+        }
+        #mobile-root .dot {
+            width: 4px; height: 4px;
+            border-radius: 50%;
+            background: rgba(45, 45, 45, 0.22);
+            transition: background 0.25s ease, transform 0.25s ease;
+        }
+        #mobile-root .dot.active {
+            background: var(--ink);
+            transform: scale(1.5);
+        }
+        #mobile-root #description {
+            font-size: 0.875rem;
+            font-weight: 400;
+            line-height: 1.5;
+            color: var(--ink-soft);
+            max-width: 32ch;
+            margin: 0 auto;
+        }
+
+        /* ==========================================================================
+           5. GALLERY — Echo-style vertical 3D carousel. #gallery-scroll is a
+           real native-scrolling element (spacer child just generates scroll
+           range, browser physics drives the gesture — same trick as
+           desktop's #native-scroll-container); #gallery-viewport sits on top,
+           JS-transformed per card, decoupled from the cards' own DOM scroll
+           position. Fake glass throughout, not blur() as in Echo's
+           reference — consistent with this project's mobile-perf rule.
+           ========================================================================== */
+        #mobile-root #gallery {
+            overflow: hidden;
+        }
+
+        #mobile-root #gallery-scroll {
+            position: absolute; inset: 0;
+            overflow-y: auto; overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            z-index: 1;
+        }
+        #mobile-root #gallery-scroll::-webkit-scrollbar { display: none; }
+        #mobile-root #gallery-scroll-spacer { width: 1px; } /* height set in JS */
+
+        /* #gallery-scroll is a live scroll surface only while Gallery is active.
+           It shares #home's rect from first paint, but resizeSpacer() (real
+           scroll height) only runs in Gallery.enter() — so at boot it has
+           -webkit-overflow-scrolling:touch with no content, which still
+           promotes a native scroll-view layer over the whole of #home,
+           intercepting touch beneath CSS hit-testing. That's why it broke
+           the cluster and carousel while #tabslot (outside the rect) kept
+           working, and why one Gallery visit "fixed" it. Scoping overflow to
+           the active page prevents the ghost layer entirely. */
+        #mobile-root:not([data-page="gallery"]) #gallery-scroll {
+            overflow: hidden;
+            -webkit-overflow-scrolling: auto;
+        }
+
+        #mobile-root #gallery-viewport {
+            position: sticky;
+            top: 0;
+            height: 100%;
+            perspective: 850px;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        #mobile-root .gallery-card {
+            position: absolute;
+            top: 50%; left: 50%;
+            /* Bounded by height as well as width: the card is 16:9 plus a
+               control cluster underneath, so on a short landscape viewport a
+               width-only cap would make a tile taller than the screen. The
+               height term keeps the whole tile + controls inside the visible
+               frame on any device shape. */
+            width: min(calc(var(--mvw) * 78), 420px, calc(var(--app-mh) * 1.15));
+            display: none;
+            opacity: 0;
+            transform-style: preserve-3d;
+            pointer-events: auto;
+        }
+        /* will-change scoped to the active page, not standing — unconditionally
+           it kept every shown card promoted to its own GPU layer for the
+           rest of the session, degrading Home's responsiveness after a
+           Gallery visit. 'opacity' is now hinted too, since settle isolation
+           drives it per-frame during a swipe; still dropped by CSS alone
+           the moment Gallery stops being active. */
+        #mobile-root[data-page="gallery"] .gallery-card { will-change: transform, opacity; }
+        /* Separate inner element for the one-time entrance scale/fade, so it
+           never fights the outer element's own per-frame JS transform (position/
+           rotation/opacity from the scroll math) — the two layers are
+           independent and simply compose visually. */
+        #mobile-root .gallery-card-inner {
+            opacity: 1;
+            transform: scale(1);
+        }
+        /* Arrival: the first tile rises into the centre and settles, rather
+           than simply being there. The typewriter waits for it (see
+           GALLERY_SETTLE_MS) so the page reads as setting its stage. */
+        #mobile-root .gallery-card-inner.gallery-entrance-start {
+            opacity: 0;
+            transform: translateY(18px) scale(0.94);
+            transition: none;
+        }
+        #mobile-root .gallery-card-inner.gallery-entrance-go {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.72s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        #mobile-root .gallery-casing {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
+        }
+        /* Static subtle edge highlight — the mobile translation of Echo's
+           cursor-tracking glow. There's no "hover" concept on a touchscreen (a
+           finger is either touching or it isn't, and it's usually busy driving
+           the scroll gesture itself), so this is a fixed highlight rather than
+           trying to fake a moving spotlight off touch events. */
+        #mobile-root .gallery-casing::after {
+            content: '';
+            position: absolute; inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+        }
+        #mobile-root .gallery-casing video {
+            width: 100%; height: 100%;
+            object-fit: contain;
+            background: #050505;
+            display: block;
+        }
+        #mobile-root .gallery-cover {
+            position: absolute; inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 3;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
+        }
+        #mobile-root .gallery-card-title {
+            color: #ffffff;
+            font-weight: 400;
+            letter-spacing: 0.02em;
+            font-size: clamp(1.05rem, calc(var(--mvw) * 4.5), 1.5rem);
+            margin: 0;
+            text-align: center;
+            padding: 0 16px;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+        }
+        /* Reuses the existing dark .gallery-cover/title as the failure state
+           (see markFailed()/retryCard()) — no new visual language, just one
+           more line of text and the whole card becomes the retry target. */
+        #mobile-root .gallery-video-message {
+            margin: 10px 0 0;
+            max-width: 240px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            line-height: 1.4;
+            color: rgba(255, 255, 255, 0.82);
+            text-align: center;
+            padding: 0 16px;
+        }
+        #mobile-root .gallery-card.gallery-video-failed .gallery-cover {
+            opacity: 1 !important;   /* overrides the play-state opacity:0 the click handler sets on every other card */
+            pointer-events: auto;
+            cursor: pointer;
+        }
+        #mobile-root .gallery-card.gallery-video-failed .gallery-play-wrap { opacity: 0.35; pointer-events: none; }
+
+        /* ---- control cluster: scrubber above the play button, both reading
+           as one system rather than two separate elements ---- */
+        #mobile-root .gallery-controls {
+            display: flex; flex-direction: column; align-items: center;
+            margin-top: 20px;
+            gap: 16px;
+        }
+
+        #mobile-root .gallery-scrub {
+            -webkit-appearance: none; appearance: none;
+            width: 100%;
+            max-width: 340px;
+            height: 24px;              /* generous tap target; visual track is thinner, see below */
+            background: transparent;
+            margin: 0;
+            cursor: pointer;
+            --p: 0%;
+        }
+        #mobile-root .gallery-scrub::-webkit-slider-runnable-track {
+            height: 3px;
+            border-radius: 2px;
+            background: linear-gradient(to right, #ffffff var(--p), rgba(255, 255, 255, 0.26) var(--p));
+        }
+        #mobile-root .gallery-scrub::-moz-range-track {
+            height: 3px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.26);
+        }
+        #mobile-root .gallery-scrub::-moz-range-progress {
+            height: 3px;
+            border-radius: 2px;
+            background: #ffffff;
+        }
+        #mobile-root .gallery-scrub::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 13px; height: 13px;
+            border-radius: 50%;
+            background: #ffffff;
+            margin-top: -5px;          /* centres the thumb on the 3px track */
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+        }
+        #mobile-root .gallery-scrub::-moz-range-thumb {
+            width: 13px; height: 13px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: none;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+        }
+
+        /* No button chrome — just the icons themselves. Kept as a sizing box
+           for a consistent tap target and to hold the is-play/is-pause state. */
+        #mobile-root .gallery-play-btn {
+            position: relative;
+            width: 50px; height: 50px;
+            transition: transform 0.15s ease;
+        }
+        #mobile-root .gallery-play-btn:active { transform: scale(0.92); }
+        #mobile-root .gallery-icon-play,
+        #mobile-root .gallery-icon-pause {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            transition: opacity 0.15s ease;
+        }
+        #mobile-root .gallery-icon-play svg {
+            width: 26px; height: auto;
+            display: block;
+            /* optical centering — the triangle's visual weight sits left of
+               its own bounding box */
+            margin-left: 3px;
+        }
+        #mobile-root .gallery-icon-pause svg { width: 20px; height: auto; display: block; }
+        #mobile-root .gallery-icon-play svg path,
+        #mobile-root .gallery-icon-pause svg path { fill: #ffffff; }
+        #mobile-root .gallery-play-btn.is-play .gallery-icon-pause { opacity: 0; }
+        #mobile-root .gallery-play-btn.is-pause .gallery-icon-play { opacity: 0; }
+
+        #mobile-root .gallery-prompt-text {
+            position: absolute;
+            left: 0; right: 0;
+            text-align: center;
+            color: #ffffff;
+            font-weight: 400;
+            font-size: 1.125rem;
+            z-index: 5;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.6s ease;
+        }
+        #mobile-root #gallery-welcome {
+            top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 22px);
+        }
+        #mobile-root #gallery-welcome::after {
+            content: '|';
+            margin-left: 4px;
+            animation: blink 1s step-start infinite;
+        }
+        #mobile-root #gallery-welcome.done::after { opacity: 0; transition: opacity 0.4s ease; }
+
+
+        /* ==========================================================================
+           6. LANDSCAPE — its own composition, not a rotated portrait layout,
+           scoped under [data-orient="landscape"]. HOME switches to a grid
+           (tab bar full width, carousel left column, name+meta pulled
+           together in the right column). GALLERY's motion math reads the
+           viewport directly every frame, so it adapts with no branch needed.
+           ========================================================================== */
+        #mobile-root[data-orient="landscape"] {
+            /* Same viewport-derived approach as portrait, retuned for the
+               wide-short shape: landscape height is the scarce dimension, so
+               the bar and its gaps take a smaller share of it and bottom out
+               lower before anything is allowed to overflow. */
+            --tabbar-h: clamp(30px, calc(var(--app-mh) * 0.101), 39px);
+            --tab-gap-top: clamp(4px, calc(var(--app-mh) * 0.022), 10px);
+            --tab-gap-bottom: clamp(4px, calc(var(--app-mh) * 0.026), 12px);
+        }
+        /* Grid lives on #projects-panel, not #home — grid-area only applies to a
+           direct child of the grid container, and #carousel/#project-name/
+           #meta stopped being direct children of #home once they were
+           wrapped in #projects-panel for the profile/projects cross-fade.
+           That silently fell back to the portrait column; declaring the
+           grid on the actual parent restores it. */
+        #mobile-root[data-orient="landscape"] #projects-panel {
+            display: grid;
+            grid-template-columns: 58% 42%;
+            grid-template-rows: 1fr 1fr;
+            grid-template-areas:
+                "car  name"
+                "car  meta";
+            align-items: stretch;
+            padding-bottom: 6px;
+        }
+        #mobile-root[data-orient="landscape"] #tabslot {
+            height: var(--tabbar-h);
+            margin-top: var(--tab-gap-top);
+        }
+        #mobile-root[data-orient="landscape"] #carousel {
+            grid-area: car;
+            min-height: 0;
+            min-width: 0;
+        }
+        #mobile-root[data-orient="landscape"] #project-name {
+            grid-area: name;
+            align-self: end;
+            text-align: left;
+            margin-top: 0;
+            margin-bottom: 0;
+            min-width: 0;
+            padding: 0 18px;
+        }
+        #mobile-root[data-orient="landscape"] #meta {
+            grid-area: meta;
+            align-self: start;
+            height: auto;
+            min-width: 0;
+            text-align: left;
+            padding: 8px 18px 0;
+        }
+        #mobile-root[data-orient="landscape"] #position-dots { justify-content: flex-start; }
+        #mobile-root[data-orient="landscape"] #description { margin: 0; }
+
+        /* PROFILE (landscape): cluster sits left of the paragraph, expands into
+           a vertical column (the only sensible direction when height, not
+           width, is the tight dimension) — sizes are vh-clamped accordingly. */
+        #mobile-root[data-orient="landscape"] #profile-panel {
+            flex-direction: row;
+            align-items: center;
+            gap: clamp(16px, calc(var(--mvw) * 3), 26px);
+            padding: 0 clamp(16px, calc(var(--mvw) * 4), 28px);
+        }
+        #mobile-root[data-orient="landscape"] #profile-stack {
+            /* 3 cards + 2 gaps deriving from the real available panel height (not a
+               guessed px/vh figure) is what guarantees the column fits any
+               landscape phone — min() picks whichever is smaller: the
+               aesthetic cap, or what actually fits. */
+            --pl-gap: clamp(6px, calc(var(--panel-h) * 0.03), 12px);
+            --pl-card: min(
+                106px,
+                calc((var(--panel-h) - (var(--pl-gap) * 2) - 8px) / 3),
+                calc(var(--mvw) * 26)
+            );
+            flex: 0 0 auto;
+            width: var(--pl-card);
+            /* Exactly the expanded column's height, so the box never claims
+               more room than the content needs or less than it occupies. */
+            height: calc(var(--pl-card) * 3 + var(--pl-gap) * 2);
+            margin-top: 0;
+        }
+        #mobile-root[data-orient="landscape"] #profile-stack .profile-photo {
+            width: var(--pl-card);
+            height: var(--pl-card);
+            border-radius: 16%;
+        }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(1) { transform: translate(0, calc(var(--pl-card) * 0.06)) rotate(7deg); }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(2) { transform: translate(0, calc(var(--pl-card) * 0.16)) rotate(3.5deg); }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-clustered .profile-photo:nth-child(3) { transform: translate(0, calc(var(--pl-card) * 0.30)) rotate(0deg); }
+        /* Vertical column on expand — same rear-cards-first ordering as
+           portrait/desktop, just along Y instead of X. The width/height and
+           stack height are re-stated explicitly for the expanded state so
+           they beat the portrait `.is-expanded` rules on specificity rather
+           than relying on source order. */
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded {
+            height: calc(var(--pl-card) * 3 + var(--pl-gap) * 2);
+        }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo {
+            width: var(--pl-card);
+            height: var(--pl-card);
+            border-radius: 16%;
+        }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo:nth-child(1) { transform: translate(0, calc((var(--pl-card) + var(--pl-gap)) * 2)) rotate(0deg); transition-delay: 0s; }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo:nth-child(2) { transform: translate(0, calc(var(--pl-card) + var(--pl-gap))) rotate(0deg); transition-delay: 0.04s; }
+        #mobile-root[data-orient="landscape"] #profile-stack.is-expanded .profile-photo:nth-child(3) { transform: translate(0, 0) rotate(0deg); transition-delay: 0.16s; }
+        #mobile-root[data-orient="landscape"] #profile-bio {
+            margin-top: 0;
+            flex: 1 1 auto;
+            min-width: 0;
+            font-size: clamp(12.5px, calc(var(--app-mh) * 0.038), 14.5px);
+            line-height: 1.5;
+        }
+        #mobile-root[data-orient="landscape"] #profile-clock {
+            bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(6px, calc(var(--app-mh) * 0.036), 12px));
+            font-size: 0.78rem;
+        }
+
+        /* GALLERY (landscape): the welcome heading is hidden outright. There
+           simply isn't the vertical room for it beside the first video tile
+           in a wide-short viewport, and any position that clears the tile
+           puts it under the header. display:none rather than opacity, so it
+           can't intercept anything or occupy layout either. */
+        #mobile-root[data-orient="landscape"] #gallery-welcome {
+            display: none;
+        }
+
+        /* Landscape tiles at 87%: the whole min() is scaled, not one term, so
+           all three constraints (viewport width, 420px cap, --app-mh height
+           bound) still apply, just 13% smaller. Purely aesthetic — they
+           already fit; this stops them filling the frame edge to edge. */
+        #mobile-root[data-orient="landscape"] .gallery-card {
+            width: calc(min(calc(var(--mvw) * 78), 420px, calc(var(--app-mh) * 1.15)) * 0.87);
+        }
+
+        /* ==========================================================================
+           TABLET-WINDOW HEADROOM
+           --------------------------------------------------------------------------
+           #mobile-root's minDim<=600px boundary is wider than any real
+           phone's short edge (~360-430px) — reachable only by a desktop
+           window deliberately narrowed into 480-600px. Scoping the raised
+           tokens behind that width (rather than raising the shared numbers
+           directly) makes it provably inert on every real phone. */
+        @media (min-width: 480px) {
+            #mobile-root #profile-stack {
+                --pf-card: min(153px, calc(var(--panel-h) * 0.26), calc(var(--mvw) * 40));
+            }
+            #mobile-root { --tabbar-h: clamp(39px, calc(var(--app-mh) * 0.060), 52px); }
+            #mobile-root .gallery-card {
+                width: min(calc(var(--mvw) * 78), 460px, calc(var(--app-mh) * 1.15));
+            }
+            #mobile-root #profile-bio {
+                font-size: clamp(0.79rem, calc(var(--panel-h) * 0.032), 0.98rem);
+            }
+        }
+
+        /* ==========================================================================
+           7. REDUCED MOTION
+           ========================================================================== */
+        @media (prefers-reduced-motion: reduce) {
+            #mobile-root #home.arrive #tabslot,
+            #mobile-root #home.arrive #project-name,
+            #mobile-root #home.arrive #carousel,
+            #mobile-root #home.arrive #meta { animation: none; }
+            #mobile-root .profile-photo-inner { animation: none !important; }
+            /* The mobile sequencer also applies every stage at once under
+               reduced motion, so nothing waits on a timer. */
+            #mobile-root #profile-stack,
+            #mobile-root #profile-bio,
+            #mobile-root #profile-clock { transition: none !important; transform: none !important; }
+            #mobile-root .profile-photo { animation: none !important; opacity: 1 !important; }
+            #mobile-root * { scroll-behavior: auto !important; }
+        }
+
+    

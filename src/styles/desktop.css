@@ -1,0 +1,1068 @@
+
+        html[data-exp="mobile"] #desktop-root { display: none !important; }
+        html[data-exp="desktop"] #mobile-root { display: none !important; }
+    
+
+        /* ==========================================================================
+           TABLE OF CONTENTS (search for the heading text to jump to it)
+           --------------------------------------------------------------------------
+           VIEWPORT UNITS · SCENE WRAPPERS · SCENE 1 (WEBGL LANDING) ·
+           PULSE (hand-tracking, scene 3) · GLASS PANELS (notice/onboard/denied) ·
+           DESKTOP HOMEPAGE · TABLET-PORTRAIT COMPOSITION ·
+           HOMEPAGE ARRIVAL (desktop) · SCENE 2 (COLLECTIONS) · SCENE 3 (MIND MAP)
+           MOBILE STYLESHEET (#mobile-root):
+             1. FAKE GLASS · 2. HEADER · 3. PAGES · 4. HOME ·
+             PROFILE SECTION (mobile home) · 5. GALLERY · 6. LANDSCAPE ·
+             TABLET-WINDOW HEADROOM · 7. REDUCED MOTION
+           ========================================================================== */
+        /* ==========================================================================
+           VIEWPORT UNITS
+           --------------------------------------------------------------------------
+           --vh/--vw come from the Viewport module, so CSS and WebGL agree by
+           construction. Updated on every read; expensive relayout only fires
+           on a meaningful change (see Viewport). */
+        :root {
+            --vh: 1vh;
+            --vw: 1vw;
+            --app-h: calc(var(--vh) * 100);
+            --app-w: calc(var(--vw) * 100);
+
+            /* Shared control-color token — desktop + mobile nav only. Descriptive
+               typography (hints, descriptions, WebGL notice, link preview)
+               keeps its own values; only controls use this. */
+            --ui-grey: #595959;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            background-color: #CCCCCC;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            width: var(--app-w);
+            height: var(--app-h);
+            overflow: hidden;
+            overscroll-behavior: none;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* ==========================================================================
+           SCENE WRAPPERS
+           ========================================================================== */
+        #scene-one, #scene-two, #scene-three {
+            position: fixed;
+            top: 0; left: 0;
+            width: var(--app-w);
+            height: var(--app-h);
+            transition: opacity 0.8s ease;
+        }
+
+        #scene-two, #scene-three {
+            opacity: 0;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        /* Context-loss fallback. Shown only if a lost context fails to restore
+           within RECOVERY_GRACE_MS, so the user never sits in front of a silent
+           black canvas with no way forward. */
+        #gl-recovery {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 18px;
+            background: #CCCCCC;
+            color: #777777;
+            font-size: 15px;
+            text-align: center;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+        html.gl-unrecoverable #gl-recovery { display: flex; }
+        #gl-recovery button {
+            font: inherit;
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50px;
+            padding: 10px 26px;
+            cursor: pointer;
+        }
+
+        /* ==========================================================================
+           SCENE 1 (WEBGL LANDING)
+           ========================================================================== */
+        #webgl-module {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            cursor: grab;
+        }
+        #canvas-container:active { cursor: grabbing; }
+
+        .nav-btn {
+            position: fixed;
+            top: 32px; left: 32px;
+            padding: 10px 25px;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50px;
+            font-weight: 500; font-size: 14px; color: var(--ui-grey);
+            cursor: pointer;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 4px 13px rgba(0, 0, 0, 0.0214);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.55s ease;
+            z-index: 200; user-select: none; letter-spacing: 0.5px;
+            display: flex; align-items: center; gap: 8px;
+            --x: 50%; --y: 50%;
+        }
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, 0.35); transform: translateY(-1px); color: #ffffff;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.5), 0 6px 16px rgba(0, 0, 0, 0.03);
+        }
+        .nav-btn:active { transform: translateY(0px); box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 2px 8px rgba(0, 0, 0, 0.02); }
+        .nav-btn:focus-visible { outline: 2px solid #ffffff; outline-offset: 3px; }
+
+        @media (hover: hover) and (pointer: fine) {
+            .nav-btn::after {
+                content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+                background: radial-gradient(28px circle at var(--x) var(--y), rgba(255, 255, 255, 0.95), transparent 100%);
+                -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+                -webkit-mask-composite: xor; mask-composite: exclude;
+                opacity: 0; transition: opacity 0.3s ease, border-radius 0.5s cubic-bezier(0.16, 1, 0.3, 1); pointer-events: none;
+            }
+            .nav-btn:hover::after { opacity: 1; }
+        }
+
+        /* ==========================================================================
+           PULSE — desktop Mind Map hand-tracking input (scene 3 only)
+           --------------------------------------------------------------------------
+           Notice/onboard/denied panels use dark frosted glass (not the site's
+           usual light glass) so white text stays legible over either the flat
+           background or the busy globe. Camera preview uses the same bezel-
+           not-blur technique as the mobile gallery tiles. */
+        #pulse-toggle {
+            position: fixed;
+            top: 32px; right: 32px;
+            z-index: 210;
+            display: flex; align-items: center; gap: 10px;
+            opacity: 0; pointer-events: none;
+            transform: translateY(-6px);
+            transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #pulse-toggle.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+        #pulse-toggle .pulse-label {
+            font-weight: 500; font-size: 14px; color: #777777; letter-spacing: 0.5px;
+            user-select: none;
+        }
+        #pulse-toggle .pulse-switch {
+            position: relative;
+            width: 46px; height: 26px;
+            border-radius: 999px;
+            background: #E4E4E7;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        #pulse-toggle .pulse-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #pulse-toggle.on .pulse-switch { background: #43B75D; }
+        #pulse-toggle.on .pulse-switch::after { transform: translateX(20px); }
+
+        /* ==========================================================================
+           GLASS PANELS (notice / onboard / denied)
+           --------------------------------------------------------------------------
+           Frosted rather than light glass — a lighter pass let the globe
+           compete with the instructional text. */
+        .pulse-panel {
+            position: fixed;
+            z-index: 300;
+            display: flex; flex-direction: column; align-items: center;
+            text-align: center;
+            border-radius: 22px;
+            background: rgba(24, 24, 26, 0.55);
+            backdrop-filter: blur(28px) saturate(1.4);
+            -webkit-backdrop-filter: blur(28px) saturate(1.4);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.12), 0 24px 60px rgba(0, 0, 0, 0.35);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease, transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .pulse-panel.visible { opacity: 1; pointer-events: auto; }
+
+        #pulse-notice {
+            left: 50%; top: 50%;
+            width: min(420px, 86vw);
+            padding: 34px 32px 28px;
+            transform: translate(-50%, -50%) translateY(8px) scale(0.98);
+        }
+        #pulse-notice.visible { transform: translate(-50%, -50%) translateY(0) scale(1); }
+        #pulse-notice h3 { margin: 0 0 14px; font-size: 1.15rem; font-weight: 600; color: #ffffff; letter-spacing: 0.02em; }
+        #pulse-notice p { margin: 0 0 10px; font-size: 0.92rem; line-height: 1.55; color: #ffffff; }
+        #pulse-notice p:last-of-type { margin-bottom: 22px; }
+        #pulse-notice .pulse-begin {
+            font: inherit; font-weight: 500; font-size: 14px; letter-spacing: 0.4px;
+            color: #2d2d2d; background: #ffffff;
+            border: none; border-radius: 999px;
+            padding: 11px 30px; cursor: pointer;
+            transition: transform 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
+        }
+        #pulse-notice .pulse-begin:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18); }
+        #pulse-notice .pulse-begin:disabled { opacity: 0.6; cursor: default; transform: none; box-shadow: none; }
+
+        /* Sits on the same fixed/centred/glass foundation as #pulse-notice
+           (.pulse-panel), just narrower and without the Begin button — this
+           is an acknowledgement, not a flow with a next step. */
+        #webgl-notice {
+            left: 50%; top: 50%;
+            width: min(380px, 86vw);
+            padding: 30px 28px 26px;
+            transform: translate(-50%, -50%) translateY(8px) scale(0.98);
+        }
+        #webgl-notice.visible { transform: translate(-50%, -50%) translateY(0) scale(1); }
+        #webgl-notice h3 {
+            margin: 0 0 12px;
+            padding-right: 22px;   /* clears the close button */
+            font-size: 1.05rem;
+            font-weight: 600;
+            line-height: 1.35;
+            color: #ffffff;
+            letter-spacing: 0.01em;
+        }
+        #webgl-notice p { margin: 0; font-size: 0.9rem; line-height: 1.55; color: #ffffff; opacity: 0.86; }
+        #webgl-notice-close {
+            position: absolute;
+            top: 14px; right: 14px;
+            width: 26px; height: 26px;
+            display: flex; align-items: center; justify-content: center;
+            appearance: none; border: 0; background: none; padding: 0;
+            color: #ffffff; opacity: 0.7; cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+        #webgl-notice-close:hover { opacity: 1; }
+        #webgl-notice-close svg { width: 15px; height: 15px; }
+
+        #pulse-onboard {
+            left: 50%;
+            padding: 22px 26px 24px;
+        }
+        #pulse-onboard[data-size="large"] {
+            top: 50%; bottom: auto;
+            width: min(560px, 88vw);
+            transform: translate(-50%, -50%) translateY(8px) scale(0.98);
+        }
+        #pulse-onboard[data-size="large"].visible { transform: translate(-50%, -50%) translateY(0) scale(1); }
+        #pulse-onboard[data-size="small"] {
+            bottom: 40px; top: auto;
+            width: 232px;
+            padding: 14px 16px 16px;
+            transform: translate(-50%, 14px);
+        }
+        #pulse-onboard[data-size="small"].visible { transform: translate(-50%, 0); }
+
+        .pulse-cam {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 16px;
+            overflow: hidden;
+            background: #111111;
+            margin-bottom: 16px;
+        }
+        #pulse-onboard[data-size="small"] .pulse-cam { margin-bottom: 10px; }
+        .pulse-cam video {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            display: block;
+            transform: scaleX(-1);   /* mirrored, selfie-style */
+        }
+        /* Bezel above the media, same technique as the mobile gallery tiles —
+           a thin inset highlight, not a blur on the feed itself. */
+        .pulse-cam::after {
+            content: '';
+            position: absolute; inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+        }
+
+        .pulse-demo {
+            width: 52px; height: 52px;
+            margin-bottom: 14px;
+            color: rgba(255, 255, 255, 0.85);
+        }
+        #pulse-onboard[data-size="small"] .pulse-demo { width: 40px; margin-bottom: 10px; }
+        .pulse-demo svg { width: 100%; height: 100%; display: block; }
+        .pulse-gesture-pulse { animation: pulseGestureFade 1.7s ease-in-out infinite; transform-origin: center; }
+        @keyframes pulseGestureFade {
+            0%, 100% { opacity: 0.45; transform: scale(0.94); }
+            50%      { opacity: 1;    transform: scale(1.04); }
+        }
+        /* Small reminder icon sat above the circular-motion demo in the
+           movement step — the orbit alone shows motion, this keeps the
+           required gesture (pinch) visible while the user tries it. */
+        .pulse-gesture-reminder { width: 26px; height: 26px; margin-bottom: 10px; color: rgba(255, 255, 255, 0.85); }
+        .pulse-gesture-reminder svg { width: 100%; height: 100%; display: block; }
+
+        /* Circular-motion demo — "move any which way" reads better as a loop
+           than a straight track now that the taught interaction is one free
+           2D motion rather than a fixed axis. Classic clock-hand technique:
+           the dot sits at the top edge of a square that rotates about its own
+           centre, so it sweeps the ring's circumference for free. */
+        .pulse-orbit { position: relative; width: 56px; height: 56px; margin-bottom: 10px; }
+        .pulse-orbit-ring {
+            position: absolute; inset: 0;
+            border-radius: 50%;
+            border: 1.5px dashed rgba(255, 255, 255, 0.25);
+        }
+        .pulse-orbit-spin {
+            position: absolute; inset: 0;
+            animation: pulseOrbitSpin 2.6s linear infinite;
+        }
+        .pulse-orbit-dot {
+            position: absolute;
+            top: -3px; left: 50%; margin-left: -4px;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 0 8px rgba(255, 255, 255, 0.55);
+        }
+        @keyframes pulseOrbitSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* Single progress pip — fills from white toward green as accumulated
+           movement approaches the threshold, same lerp technique as before,
+           just one indicator instead of four end-dots. */
+        .pulse-progress-dot {
+            display: block;
+            width: 7px; height: 7px;
+            margin: 2px auto 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.28);
+            transition: background 0.15s linear, transform 0.15s linear;
+        }
+        .pulse-progress-dot.done { transform: scale(1.35); }
+
+        .pulse-instruction {
+            color: #ffffff;
+            font-size: 0.98rem;
+            font-weight: 400;
+            line-height: 1.5;
+            margin: 0;
+            max-width: 34ch;
+        }
+        #pulse-onboard[data-size="small"] .pulse-instruction { font-size: 0.86rem; max-width: 26ch; }
+        .pulse-subtext {
+            color: #ffffff;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            margin: 8px 0 0;
+            max-width: 34ch;
+        }
+        .pulse-subtext:empty { display: none; }
+        .pulse-skip {
+            display: inline-block;
+            margin-top: 16px;
+            font-size: 13px; font-weight: 500; color: rgba(255, 255, 255, 0.5);
+            letter-spacing: 0.3px;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+        .pulse-skip:hover { color: rgba(255, 255, 255, 0.85); }
+
+        #pulse-denied {
+            top: 84px; right: 32px; left: auto;
+            max-width: 300px;
+            padding: 16px 18px;
+            border-radius: 18px;
+            color: rgba(255, 255, 255, 0.88);
+            font-size: 13px; line-height: 1.5;
+            transform: translateY(-6px);
+        }
+        #pulse-denied.visible { transform: translateY(0); }
+
+        /* Shown when mouse/touch interaction is attempted while Pulse has it
+           suppressed — same glass treatment as the notice/onboarding panels
+           (white text on real glass), fading in with a slight scale-up. */
+        #pulse-input-blocked {
+            left: 50%; top: 50%;
+            width: min(360px, 84vw);
+            padding: 22px 26px;
+            transform: translate(-50%, -50%) translateY(6px) scale(0.97);
+        }
+        #pulse-input-blocked.visible { transform: translate(-50%, -50%) translateY(0) scale(1); }
+        #pulse-input-blocked p { margin: 0; color: #ffffff; font-size: 0.95rem; line-height: 1.5; text-align: center; }
+
+        #home-btn { opacity: 0; pointer-events: none; }
+
+        /* ==========================================================================
+           DESKTOP HOMEPAGE
+           --------------------------------------------------------------------------
+           Overlay above scene 1; fades on entry and leaves the hit-testing
+           path entirely, so it can't block later Vault interaction. */
+        #homepage {
+            position: fixed;
+            inset: 0;
+            z-index: 400;
+            background: #CCCCCC;
+            opacity: 1;
+            transition: opacity 0.85s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #homepage.leaving { opacity: 0; }
+        #homepage.gone { display: none; }
+
+        /* Corner buttons use vw/vh-clamped units (not the Vault's fixed 32px),
+           like the rest of this section, so proportions hold through a
+           resize with no JS — a plain DOM page doesn't need the Viewport
+           module the WebGL canvas requires. */
+        #hp-name-btn {
+            position: fixed;
+            top: clamp(20px, 3.5vh, 34px);
+            left: clamp(16px, 2.8vw, 30px);
+        }
+        #hp-contact-btn {
+            position: fixed;
+            top: clamp(20px, 3.5vh, 34px);
+            right: clamp(16px, 2.8vw, 30px);
+            left: auto;
+        }
+
+        /* The cluster and the bio share a left edge — that alignment is the
+           spine of the reference layout, so both live in one block rather than
+           being positioned independently. Sits left-of-centre and starts near
+           the top of the viewport rather than vertically centred, matching
+           the reference composition's heavy negative space on the right. */
+        #hp-inner {
+            position: absolute;
+            top: 17vh;
+            left: 18vw;
+            width: min(460px, 34vw);
+        }
+
+        /* Fixed height in both states so expanding never reflows the bio —
+           the cards are absolutely positioned inside this box. Card size and
+           gap are viewport-scaled (clamped) rather than fixed pixels, and the
+           fan offsets below are expressed as a fraction of --hp-card, so the
+           whole cluster scales as one unit at any window size instead of the
+           fan spacing drifting out of proportion. */
+        #hp-stack {
+            --hp-card: clamp(150px, 12vw, 190px);
+            --hp-gap: clamp(10px, 1vw, 16px);
+            position: relative;
+            width: 100%;
+            height: calc(var(--hp-card) * 1.248 + 20px);
+            margin-bottom: clamp(28px, 3.5vh, 44px);
+        }
+        .hp-photo {
+            position: absolute;
+            top: 0; left: 0;
+            width: var(--hp-card);
+            height: var(--hp-card);
+            border-radius: 14%;
+            overflow: hidden;
+            background: #bdbdbd;
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.2);
+            transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                        width 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                        height 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+            will-change: transform;
+        }
+        .hp-photo img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+        /* Overfilled so the sway can never expose the card's own background at
+           the edges — the inner is what animates, and it's inside overflow:hidden. */
+        .hp-photo-inner { width: 116%; height: 116%; margin: -8% 0 0 -8%; }
+
+        #hp-stack.is-clustered .hp-photo:nth-child(1) { transform: translate(calc(var(--hp-card) * 0.288), calc(var(--hp-card) * 0.016)) rotate(11deg); z-index: 1; }
+        #hp-stack.is-clustered .hp-photo:nth-child(2) { transform: translate(calc(var(--hp-card) * 0.184), calc(var(--hp-card) * 0.12)) rotate(5.5deg); z-index: 2; }
+        #hp-stack.is-clustered .hp-photo:nth-child(3) { transform: translate(0, calc(var(--hp-card) * 0.248)) rotate(0deg); z-index: 3; }
+
+        #hp-stack.is-expanded .hp-photo { width: var(--hp-card); height: calc(var(--hp-card) * 1.048); }
+        /* Rear cards open outward first and define the row; the front
+           portrait settles last. Same ordering as mobile. */
+        #hp-stack.is-expanded .hp-photo:nth-child(1) { transform: translate(calc((var(--hp-card) + var(--hp-gap)) * 2), calc(var(--hp-card) * 0.16)) rotate(0deg); transition-delay: 0s; }
+        #hp-stack.is-expanded .hp-photo:nth-child(2) { transform: translate(calc(var(--hp-card) + var(--hp-gap)), calc(var(--hp-card) * 0.16)) rotate(0deg); transition-delay: 0.04s; }
+        #hp-stack.is-expanded .hp-photo:nth-child(3) { transform: translate(0, calc(var(--hp-card) * 0.16)) rotate(0deg); transition-delay: 0.16s; }
+        #hp-stack.is-clustered .hp-photo:nth-child(3) { transition-delay: 0s; }
+        #hp-stack.is-clustered .hp-photo:nth-child(2) { transition-delay: 0.08s; }
+        #hp-stack.is-clustered .hp-photo:nth-child(1) { transition-delay: 0.14s; }
+
+        /* Organic sway while clustered, on an inner wrapper so it composes
+           with the positioning transform instead of overwriting it. Stops in
+           the expanded state — the photos settle once they're in a row. Three
+           stops rather than two so the return leg doesn't retrace the outbound
+           one, which is what stops a loop this short reading as mechanical. */
+        #hp-stack.is-clustered .hp-photo:nth-child(1) .hp-photo-inner { animation: hpSwayA 6.4s ease-in-out infinite; }
+        #hp-stack.is-clustered .hp-photo:nth-child(2) .hp-photo-inner { animation: hpSwayB 8.1s ease-in-out -2.7s infinite; }
+        #hp-stack.is-clustered .hp-photo:nth-child(3) .hp-photo-inner { animation: hpSwayC 5.6s ease-in-out -3.9s infinite; }
+        @keyframes hpSwayA {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            34%      { transform: translate(-7px, -10px) rotate(-2deg); }
+            67%      { transform: translate(4px, -4px) rotate(0.8deg); }
+        }
+        @keyframes hpSwayB {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            40%      { transform: translate(9px, -7px) rotate(1.8deg); }
+            72%      { transform: translate(-3px, 4px) rotate(-0.9deg); }
+        }
+        @keyframes hpSwayC {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            45%      { transform: translate(-6px, 8px) rotate(-1.6deg); }
+            78%      { transform: translate(5px, 2px) rotate(1deg); }
+        }
+
+        #hp-bio {
+            margin: 0;
+            font-size: clamp(15px, 1.15vw, 18px);
+            font-weight: 500;
+            line-height: 1.48;
+            letter-spacing: -0.005em;
+            color: #3f3f3f;
+            white-space: pre-line;
+        }
+        .hp-link {
+            color: #ffffff;
+            cursor: pointer;
+            transition: color 0.25s ease;
+        }
+        .hp-link:hover { color: #3f3f3f; }
+        .hp-link.is-copied { color: #1a9e46; }
+
+        #hp-enter-btn {
+            position: fixed;
+            top: auto;
+            bottom: clamp(32px, 7vh, 54px);
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #hp-enter-btn:hover { transform: translateX(-50%) translateY(-1px); }
+
+        /* ==========================================================================
+           TABLET-PORTRAIT COMPOSITION
+           --------------------------------------------------------------------------
+           #desktop-root serves every non-phone device/orientation. The
+           landscape left-aligned block leaves a dead zone in portrait, so
+           this re-centers #hp-inner/#hp-stack/#hp-bio into a column — no
+           DOM/JS changes. Keyed on `orientation`, not a device check, so a
+           tall desktop window self-corrects the same way. */
+        @media (orientation: portrait) {
+            #hp-inner {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: min(420px, 72vw);
+                transform: translate(-50%, -50%);
+            }
+            /* #hp-stack's expanded row never narrows the cards (width stays
+               var(--hp-card) in every state — only height/position change),
+               which is fine at 34vw in landscape but overruns this 420px
+               portrait column: 3 cards + 2 gaps at the hp-card floor (150px)
+               is ~470px. Scoped to portrait only, narrow the expanded card to
+               the same ~0.69 ratio the mobile stack uses and tighten the gap
+               to match — landscape desktop keeps the original full-width
+               cards untouched. */
+            #hp-stack.is-expanded .hp-photo {
+                width: calc(var(--hp-card) * 0.7231);
+                height: calc(var(--hp-card) * 1.048);
+            }
+            #hp-stack.is-expanded .hp-photo:nth-child(1) { transform: translate(calc(var(--hp-card) * 1.6197), calc(var(--hp-card) * 0.16)) rotate(0deg); }
+            #hp-stack.is-expanded .hp-photo:nth-child(2) { transform: translate(calc(var(--hp-card) * 0.8099), calc(var(--hp-card) * 0.16)) rotate(0deg); }
+        }
+
+        /* ==========================================================================
+           HOMEPAGE ARRIVAL (desktop)
+           --------------------------------------------------------------------------
+           Four stages (buttons, tiles, bio) via classes from runArrival(),
+           not transition-delay — a delay on #hp-contact-btn would persist
+           and block its own hover morph. Movement kept small (9-20px, sub-2%
+           scale) for weight, not spectacle. */
+        #homepage:not(.arr-btns) #hp-name-btn { opacity: 0; transform: translateY(-9px); }
+        #homepage:not(.arr-btns) #hp-contact-btn { transform: translateY(-9px); }
+        #homepage:not(.arr-btns) #hp-enter-btn { opacity: 0; transform: translateX(-50%) translateY(11px); }
+        /* Beats the shared #contact-btn opacity:0 on specificity (2 ids + class
+           against 1 id) without needing !important. */
+        #homepage.arr-btns #hp-contact-btn { opacity: 1; }
+
+        /* The stack settles as one body while the three cards resolve in
+           back-to-front. The per-card entrance animates ONLY opacity, so it
+           can never fight the fan/expand transform each card already carries
+           or the sway running on its inner wrapper. */
+        #hp-stack { transform: translateY(18px); transition: transform 0.66s cubic-bezier(0.16, 1, 0.3, 1); }
+        #homepage.arr-tiles #hp-stack { transform: translateY(0); }
+        .hp-photo { opacity: 0; }
+        #homepage.arr-tiles .hp-photo { animation: tileArrive 0.48s ease forwards; }
+        #homepage.arr-tiles .hp-photo:nth-child(3) { animation-delay: 0s; }
+        #homepage.arr-tiles .hp-photo:nth-child(2) { animation-delay: 0.10s; }
+        #homepage.arr-tiles .hp-photo:nth-child(1) { animation-delay: 0.20s; }
+        @keyframes tileArrive { from { opacity: 0; } to { opacity: 1; } }
+
+        #hp-bio {
+            opacity: 0;
+            transform: scale(0.984);
+            transform-origin: left center;
+            transition: opacity 0.62s ease, transform 0.78s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #homepage.arr-bio #hp-bio { opacity: 1; transform: scale(1); }
+
+        /* Static link preview — favicon-equivalent glyph, site name, URL. No
+           iframe and no network request: the target sites are never contacted,
+           so this costs nothing and can't leak the visitor's browsing. Same
+           darker grey-tinted glass as #hp-copied now (was too clear/weak on
+           its own), so the two floating cards read as one family. */
+        #hp-preview {
+            position: fixed;
+            z-index: 420;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 16px;
+            background: rgba(205, 205, 205, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(6px) scale(0.97);
+            transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #hp-preview.visible { opacity: 1; transform: translateY(0) scale(1); }
+        .hp-preview-icon {
+            width: 34px; height: 34px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.4);
+            flex: 0 0 auto;
+        }
+        .hp-preview-icon svg { width: 21px; height: 21px; fill: #3f3f3f; }
+        .hp-preview-name { font-size: 14px; font-weight: 500; color: #3f3f3f; line-height: 1.3; }
+        .hp-preview-url { font-size: 12px; color: #777777; line-height: 1.3; }
+
+        /* Copy confirmation. Deliberately the site's own surface rather than a
+           browser notification, and deliberately quiet: it says only what
+           happened, in the same restrained grey as everything else — darker
+           and more opaque than the link-preview card so it reads as a
+           confirmation rather than a hint. */
+        #hp-copied {
+            position: fixed;
+            z-index: 430;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(205, 205, 205, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.2px;
+            color: #2d2d2d;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(6px) scale(0.96);
+            transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #hp-copied.visible { opacity: 1; transform: translateY(0) scale(1); }
+        #hp-copied svg {
+            width: 13px; height: 13px;
+            fill: none; stroke: #555555;
+            stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        /* The shared #contact-btn rule below starts hidden because the Vault
+           reveals it during its boot sequence. The homepage has no such
+           sequence — its own arrival stage reveals it instead (see HOMEPAGE
+           ARRIVAL below). Only pointer-events is forced now; opacity is the
+           arrival's to own. */
+        #hp-contact-btn { pointer-events: auto !important; }
+
+        #contact-btn,
+        #hp-contact-btn {
+            left: auto;
+            right: 32px;
+            width: 104px;
+            height: 42px;
+            padding: 0;
+            display: block;
+            overflow: hidden;
+            box-sizing: border-box;
+            opacity: 0; pointer-events: none;
+            transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+                        height 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+                        border-radius 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+                        background 0.5s ease,
+                        box-shadow 0.5s ease,
+                        backdrop-filter 0.5s ease,
+                        -webkit-backdrop-filter 0.5s ease,
+                        transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                        opacity 0.8s ease;
+        }
+
+        #contact-btn.is-open,
+        #hp-contact-btn.is-open {
+            width: 180px;
+            height: 204px;
+            border-radius: 24px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.25) 100%);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4),
+                        inset 0 0 20px rgba(255, 255, 255, 0.08),
+                        0 8px 24px rgba(0, 0, 0, 0.03),
+                        0 1px 3px rgba(0, 0, 0, 0.01);
+            transform: translateY(0) !important;
+            cursor: default;
+        }
+
+        .contact-label {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 42px;
+            display: flex; align-items: center; justify-content: center;
+            transition: opacity 0.3s ease;
+        }
+        #contact-btn.is-open .contact-label,
+        #hp-contact-btn.is-open .contact-label { opacity: 0; pointer-events: none; }
+
+        .contact-list {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            padding: 16px 12px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            opacity: 0;
+            pointer-events: none;
+        }
+        #contact-btn.is-open .contact-list,
+        #hp-contact-btn.is-open .contact-list { opacity: 1; pointer-events: auto; }
+
+        .contact-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-radius: 14px;
+            color: var(--ui-grey);
+            font-size: 15px;
+            font-weight: 400;
+            cursor: pointer;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: background 0.2s ease, transform 0.3s ease, opacity 0.2s ease;
+        }
+        #contact-btn.is-open .contact-item,
+        #hp-contact-btn.is-open .contact-item {
+            opacity: 1;
+            transform: translateY(0);
+            transition: background 0.2s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease;
+        }
+        #contact-btn.is-open .contact-item:nth-child(1),
+        #hp-contact-btn.is-open .contact-item:nth-child(1) { transition-delay: 0.10s; }
+        #contact-btn.is-open .contact-item:nth-child(2),
+        #hp-contact-btn.is-open .contact-item:nth-child(2) { transition-delay: 0.15s; }
+        #contact-btn.is-open .contact-item:nth-child(3),
+        #hp-contact-btn.is-open .contact-item:nth-child(3) { transition-delay: 0.20s; }
+        #contact-btn.is-open .contact-item:nth-child(4),
+        #hp-contact-btn.is-open .contact-item:nth-child(4) { transition-delay: 0.25s; }
+        .contact-item:hover { background: rgba(255, 255, 255, 0.2); }
+
+        .contact-item svg {
+            width: 18px; height: 18px;
+            stroke: currentColor; fill: none;
+            stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        .be-logo {
+            font-family: inherit; font-weight: 700; font-size: 16px; letter-spacing: -0.5px;
+            display: flex; align-items: center; justify-content: center;
+            width: 18px; height: 18px;
+        }
+
+        .item-text-wrapper { position: relative; display: flex; align-items: center; flex: 1; }
+        .item-text-wrapper span { transition: opacity 0.3s ease, transform 0.3s ease; }
+        .item-text-wrapper .copied {
+            position: absolute; left: 0; color: #34C759;
+            opacity: 0; transform: translateY(4px); font-weight: 500;
+        }
+        .contact-item.is-copied .original { opacity: 0; transform: translateY(-4px); }
+        .contact-item.is-copied .copied { opacity: 1; transform: translateY(0); }
+
+        #scene-two-back-btn, #scene-three-back-btn { opacity: 0; pointer-events: none; }
+        #scene-two-back-btn.active, #scene-three-back-btn.active { opacity: 1; pointer-events: auto; }
+        #scene-two-back-btn svg, #scene-three-back-btn svg { width: 16px; height: 16px; transition: stroke 0.3s ease; }
+
+        .welcome-text {
+            position: fixed;
+            top: calc(var(--vh) * 10);
+            width: 100%;
+            text-align: center;
+            color: #FFFFFF;
+            z-index: 10;
+            font-weight: 400;
+            font-size: 1.125rem;
+            opacity: 0;
+            transition: opacity 0.8s ease;
+            pointer-events: none;
+        }
+        .welcome-text::after {
+            content: '|';
+            animation: blink 1s step-start infinite;
+            margin-left: 4px;
+            opacity: 1;
+            transition: opacity 0.4s ease;
+        }
+        .welcome-text.done::after { opacity: 0; }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        #mindmap-interact-text {
+            top: calc(var(--vh) * 90);
+            opacity: 0;
+            pointer-events: none;
+        }
+        #mindmap-interact-text::after { content: none; }
+        #mindmap-interact-text.fade-in {
+            animation: interactFadeIn 0.8s ease forwards, interactPulse 4s infinite ease-in-out 0.8s;
+        }
+        #mindmap-interact-text.hidden {
+            opacity: 0 !important;
+            animation: none !important;
+            transition: opacity 0.3s ease;
+        }
+        @keyframes interactFadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes interactPulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .scroll-instruction {
+            position: fixed; top: calc(var(--vh) * 85); width: 100%; text-align: center; color: #FFFFFF;
+            z-index: 10; font-weight: 400; font-size: 1.125rem;
+            opacity: 0; transition: opacity 1s ease; pointer-events: none;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        /* Warm graphite instead of white — everything else (font, weight,
+           size, pulse animation) is untouched. */
+        #scroll-text, #swipe-text { color: #777777; }
+        @keyframes pulseText {
+            0% { transform: scale(1); opacity: 0.7; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.7; }
+        }
+        .scroll-instruction span { animation: pulseText 4s infinite ease-in-out; }
+
+        #labels-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 5;
+        }
+        .folder-label {
+            position: absolute; top: 0; left: 0;
+            font-family: inherit;
+            font-size: 16px; font-weight: 400; color: #777777;
+            opacity: 0; transition: opacity 0.4s ease, color 0.4s ease;
+            text-align: center; white-space: nowrap;
+            will-change: transform, opacity;
+        }
+        .folder-label.focus { opacity: 1; }
+        .folder-label.hover { color: #ffffff; }
+
+        /* ==========================================================================
+           SCENE 2 (COLLECTIONS) — pure DOM, no canvas
+           ========================================================================== */
+        #dom-layer {
+            display: block; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10;
+        }
+
+        #native-scroll-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
+            z-index: 5;
+            display: none;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        #native-scroll-container::-webkit-scrollbar { display: none; }
+        /* The grid lives INSIDE this element, so the compositor scrolls the
+           cards natively. No JS runs during a grid scroll, and (Phase 3) no
+           non-passive listener sits between the touch and the scroller. */
+        #native-scroll-content { width: 100%; position: relative; }
+
+        #click-blocker {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100; display: none;
+            touch-action: none;
+        }
+        #click-blocker.active { display: block; }
+
+        #collection-info {
+            position: absolute; color: #777777; opacity: 0; pointer-events: none;
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 200;
+            top: calc(var(--vh) * 12);
+            left: calc(var(--vw) * 6);
+            max-width: 340px;
+            will-change: transform, opacity;
+        }
+        #collection-info.active { opacity: 1; }
+        #collection-info h2 { font-size: 1.5rem; font-weight: 500; margin: 0 0 12px 0; letter-spacing: 0.01em; }
+        #collection-info p { font-size: 0.95rem; line-height: 1.5; margin: 0; opacity: 0.85; }
+
+        #close-btn {
+            position: absolute;
+            top: calc(var(--vh) * 6);
+            right: calc(var(--vw) * 5);
+            color: #666666; font-size: 1rem;
+            cursor: pointer; opacity: 0; pointer-events: none;
+            transition: opacity 0.8s ease, color 0.3s ease;
+            z-index: 200; padding: 15px; margin: -15px; display: flex; align-items: center; justify-content: center;
+        }
+        #close-btn.active { opacity: 1; pointer-events: auto; }
+        #close-btn:hover { color: #FFFFFF; }
+
+        .desktop-text { display: flex; align-items: center; gap: 6px; }
+        .desktop-icon { width: 16px; height: 16px; }
+        .mobile-icon { display: none; }
+
+        /* Not permanently promoted — a standing `will-change:transform` would
+           rasterize once at layout size and GPU-magnify later scale() calls.
+           `.animating` applies only to the cluster being opened; the rest
+           fade as one composited layer via #native-scroll-content instead
+           of ~30 separate ones. */
+        .dom-card {
+            position: absolute; top: 0; left: 0; transform-origin: center center;
+            display: flex; align-items: center; justify-content: center; overflow: hidden;
+            backface-visibility: hidden;
+        }
+        .dom-card.animating {
+            will-change: transform, opacity;
+        }
+
+        .dom-card img, .dom-card video {
+            width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none;
+            transition: box-shadow 0.4s ease;
+        }
+
+        #native-scroll-content.fading { will-change: opacity; }
+
+        .cluster-title {
+            position: absolute; top: 0; left: 0; transform-origin: center center;
+            color: #777777; font-size: 0.98rem; text-align: center;
+            white-space: nowrap; letter-spacing: 0.01em;
+        }
+
+        /* Compact layout: driven by a class the Viewport module sets on <html>,
+           not by a hardcoded media query. One breakpoint source, not three. */
+        html.compact .welcome-text { top: calc(var(--vh) * 15); }
+        html.compact #mindmap-interact-text { top: calc(var(--vh) * 88); }
+        html.compact .cluster-title { font-size: 1.15rem; }
+        html.compact #collection-info {
+            top: calc(var(--vh) * 10);
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            width: calc(var(--vw) * 85);
+            max-width: none;
+        }
+        html.compact .desktop-text { display: none; }
+        html.compact .mobile-icon { display: block; width: 28px; height: 28px; color: #FFFFFF; }
+        html.compact #close-btn {
+            top: calc(var(--vh) * 3);
+            right: calc(var(--vw) * 3);
+            color: #FFFFFF;
+        }
+        html.compact #contact-btn.is-open,
+        html.compact #hp-contact-btn.is-open { width: 150px; height: 176px; border-radius: 20px; }
+        html.compact .contact-list { padding: 12px 8px; gap: 2px; }
+        html.compact .contact-item { padding: 8px 12px; font-size: 14px; border-radius: 12px; }
+        html.compact .contact-item svg, html.compact .be-logo { width: 16px; height: 16px; }
+        html.compact .be-logo { font-size: 15px; }
+        html.compact .scroll-instruction { top: calc(var(--vh) * 89); }
+
+        /* ==========================================================================
+           SCENE 3 (MIND MAP)
+           ========================================================================== */
+        #mindmap-canvas-container { width: 100%; height: 100%; display: block; }
+
+        #mindmap-loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            z-index: 10;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+
+        .morph-dots {
+            width: 28px; height: 28px;
+            animation: colorChange 4s infinite cubic-bezier(0.4, 0, 0.2, 1);
+            --text-main: #FFFFFF;
+            --text-muted: #777777;
+        }
+        .dots-group { transform-origin: 12px 12px; animation: rotateGroup 4s infinite cubic-bezier(0.4, 0, 0.2, 1); }
+        .dot-1 { animation: dot1 4s infinite cubic-bezier(0.4, 0, 0.2, 1); }
+        .dot-2 { animation: dot2 4s infinite cubic-bezier(0.4, 0, 0.2, 1); }
+        .dot-3 { animation: dot3 4s infinite cubic-bezier(0.4, 0, 0.2, 1); }
+        .dot-4 { animation: dot4 4s infinite cubic-bezier(0.4, 0, 0.2, 1); }
+        .dot-5 { animation: dot5 4s infinite cubic-bezier(0.4, 0, 0.2, 1); }
+
+        @keyframes colorChange {
+            0%, 9% { fill: var(--text-muted); }
+            10%, 40% { fill: var(--text-main); }
+            41%, 100% { fill: var(--text-muted); }
+        }
+        @keyframes rotateGroup {
+            0%, 10% { transform: rotate(0deg); }
+            40%, 100% { transform: rotate(180deg); }
+        }
+        @keyframes dot1 { 0%, 50%, 100% { transform: translate(0, 0); } 10%, 40% { transform: translate(0px, -9.5px); } }
+        @keyframes dot2 { 0%, 50%, 100% { transform: translate(0, 0); } 10%, 40% { transform: translate(9.03px, -2.94px); } }
+        @keyframes dot3 { 0%, 50%, 100% { transform: translate(0, 0); } 10%, 40% { transform: translate(5.58px, 7.68px); } }
+        @keyframes dot4 { 0%, 50%, 100% { transform: translate(0, 0); } 10%, 40% { transform: translate(-5.58px, 7.68px); } }
+        @keyframes dot5 { 0%, 50%, 100% { transform: translate(0, 0); } 10%, 40% { transform: translate(-9.03px, -2.94px); } }
+
+        .loading-text {
+            color: #FFFFFF; font-weight: 400; font-size: 1.125rem;
+            margin-top: 16px;
+            animation: pulseText 4s infinite ease-in-out;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .scroll-instruction span,
+            .loading-text,
+            .hp-photo-inner,
+            #mindmap-interact-text.fade-in { animation: none !important; }
+            .welcome-text::after { animation: none; }
+            /* runArrival() also applies every stage at once under reduced
+               motion, so nothing here is ever left waiting on a timer. */
+            #hp-name-btn, #hp-contact-btn, #hp-enter-btn,
+            #hp-stack, #hp-bio { transition: none !important; }
+            .hp-photo { animation: none !important; opacity: 1 !important; }
+        }

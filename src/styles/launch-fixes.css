@@ -1,0 +1,23 @@
+/* Focused launch refinements; original design rules remain in desktop/mobile.css. */
+
+#copy-failure { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 10000; padding: 12px 20px; border-radius: 24px; background: #3f3f3f; color: #fff; font-size: 14px; }
+#copy-failure[hidden] { display: none; }
+/* A short desktop window needs room between the bio and the fixed entry control. */
+@media (orientation: landscape) and (max-width: 1100px), (orientation: landscape) and (max-height: 720px) {
+    #homepage { overflow-y: auto; touch-action: pan-y pinch-zoom; }
+    #hp-inner { top: 100px; left: 10vw; width: min(560px, 75vw); padding-bottom: 32px; }
+    #hp-bio { font-size: 15px; }
+    #hp-enter-btn { position: relative; display: flex; width: max-content; left: auto; bottom: auto; margin: 32px auto 40px; transform: none; }
+    #hp-enter-btn:hover { transform: translateY(-1px); }
+    #hp-inner { position: relative; top: 0; margin-top: 100px; }
+    #homepage:not(.arr-btns) #hp-enter-btn { transform: translateY(11px); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .hp-photo-inner, #mobile-root .photo-inner, .pulse-gesture-pulse, .pulse-orbit-spin { animation: none !important; }
+}
+/* Preserve the icon's appearance when using a real keyboard-operable button. */
+#mobile-root .gallery-play-btn { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+#mobile-root .profile-photo-inner { animation-duration: inherit; }
+#mobile-root, #mobile-root #carousel, #mobile-root #gallery-scroll { touch-action: pan-x pan-y pinch-zoom; }
+[role="button"]:focus-visible, .dom-card:focus-visible, #mobile-root .gallery-play-btn:focus-visible { outline: 2px solid #595959; outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) { #mobile-root .profile-photo-inner { animation: none !important; } }
