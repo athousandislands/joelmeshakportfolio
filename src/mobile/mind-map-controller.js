@@ -1,6 +1,6 @@
 // Owns navigation across a deferred import and a live WebGL session.
 export function createMapSession({ load, create, onLoading, onError }) {
-    let generation = 0, active = false, runtime = null, count = 76;
+    let generation = 0, active = false, runtime = null, count = 40;
     function leave() {
         active = false;
         generation++;

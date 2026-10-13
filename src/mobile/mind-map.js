@@ -41,7 +41,7 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         REDUCED_MOTION: reduced, gsap, clamp, mix: (a, b, t) => a + (b - a) * t,
     }, {
         container: stage, loading, tileCount, strictReady: true,
-        workerLimit: 2, fitRadius: 3.8, frameIndependent: true, quietReduced: true,
+        workerLimit: 2, fitRadius: 3.55, tileSize: 0.78 * Math.sqrt(76 / tileCount), quietReduced: true,
         powerPreference: 'default',
         frameCamera(camera, viewport) {
             camera.clearViewOffset();
@@ -51,7 +51,7 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
             const top = navBottom + 18;
             const available = Math.max(100, viewport.height - top - 16);
             const center = top + available / 2;
-            camera.position.z = Math.max(camera.position.z, 3.8 / Math.tan(Math.PI / 6) * viewport.height / available);
+            camera.position.z = Math.max(camera.position.z, 3.55 / Math.tan(Math.PI / 6) * viewport.height / available);
             camera.setViewOffset(viewport.width, viewport.height, 0, viewport.height / 2 - center, viewport.width, viewport.height);
         },
         onReady() {

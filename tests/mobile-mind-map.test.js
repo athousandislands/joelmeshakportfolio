@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMapSession } from '../src/mobile/mind-map-controller.js';
-import { dottedSphereIcon } from '../src/mobile/mind-map-ui.js';
+import { mindMapIcon } from '../src/mobile/mind-map-ui.js';
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return { promise, resolve, reject }; };
 function setup(load = async () => ({}), start = () => {}) {
     const events = [];
@@ -14,7 +14,7 @@ function setup(load = async () => ({}), start = () => {}) {
 test('leaving while graphics code loads never creates a background map', async () => {
     const load = deferred(); const {session,events} = setup(() => load.promise);
     const pending = session.enter(); session.leave(); load.resolve({}); await pending;
-    assert.deepEqual(events, [['loading',76]]); assert.equal(session.active,false);
+    assert.deepEqual(events, [['loading',40]]); assert.equal(session.active,false);
 });
 test('repeated entries during loading mount only the newest map', async () => {
     const load = deferred(); const {session,events} = setup(() => load.promise);
@@ -34,11 +34,11 @@ test('graphics startup failure disposes partial resources and permits a retry', 
 test('a stale import failure after navigation does not replace the new screen with an error', async () => {
     const load = deferred(); const {session,events} = setup(() => load.promise);
     const pending = session.enter(); session.leave(); load.reject(new Error('offline')); await pending;
-    assert.deepEqual(events,[['loading',76]]);
+    assert.deepEqual(events,[['loading',40]]);
 });
-test('orb uses evenly placed dots with inherited icon colour and no visible label', () => {
-    const svg = dottedSphereIcon(); assert.match(svg,/fill="currentColor"/); assert.doesNotMatch(svg,/<text/);
-    assert.ok((svg.match(/<circle /g)||[]).length > 30);
+test('Mind Map icon uses four spaced dots with inherited colour and no visible label', () => {
+    const svg = mindMapIcon(); assert.match(svg,/fill="currentColor"/); assert.doesNotMatch(svg,/<text/);
+    assert.equal((svg.match(/<circle /g)||[]).length, 4);
 });
 
 // Exercise the shared scene with real Three geometry and simulated texture/GPU
@@ -74,7 +74,7 @@ function sceneSetup(t, count, fail = false) {
     t.after(() => scene.dispose());
     return {scene,frame,requested,uploads,errors,renders,get ready(){return ready;}};
 }
-for (const count of [76,32]) {
+for (const count of [76,40,32]) {
     test(`the ${count}-image map reveals only after every real tile is uploaded`, async t => {
         const view = sceneSetup(t,count); view.scene.mount(); await view.scene.prewarm({force:true});
         assert.equal(view.scene.tileCount,count); assert.equal(view.requested.length,count);

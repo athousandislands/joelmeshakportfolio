@@ -47,7 +47,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
            count, so the DENSITY_SCALE compensation that used to inflate tile
            size and effect radius for a sparser sphere is gone with it. These are
            the values the full/desktop set was always tuned against. */
-        const TILE = 0.78;
+        const TILE = options.tileSize || 0.78;
         const EFFECT_RADIUS_BASE = 1.8;
         const EFFECT_RADIUS_HOLD = 0.7;
 

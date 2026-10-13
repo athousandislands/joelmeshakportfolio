@@ -1,21 +1,8 @@
 import { createMapSession } from './mind-map-controller.js';
 
-// A regular dotted sphere, projected as a tiny SVG in the existing icon colour.
-export function dottedSphereIcon() {
-    const dots = [];
-    for (let row = -2; row <= 2; row++) {
-        const latitude = row * Math.PI / 6;
-        for (let column = 0; column < 12; column++) {
-            const longitude = column * Math.PI / 6;
-            const depth = Math.cos(latitude) * Math.cos(longitude);
-            if (depth < -0.01) continue;
-            const x = 12 + 8.4 * Math.cos(latitude) * Math.sin(longitude);
-            const y = 12 + 8.4 * Math.sin(latitude);
-            dots.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${(0.62 + depth * 0.19).toFixed(2)}" opacity="${(0.55 + depth * 0.45).toFixed(2)}"/>`);
-        }
-    }
-    dots.push('<circle cx="12" cy="3.6" r=".62"/><circle cx="12" cy="20.4" r=".62"/>');
-    return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${dots.join('')}</svg>`;
+// Four open, spaced dots: one centre and three forming a triangle around it.
+export function mindMapIcon() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="12" cy="4.7" r="2"/><circle cx="4.8" cy="17.2" r="2"/><circle cx="19.2" cy="17.2" r="2"/><circle cx="12" cy="12.7" r="2"/></svg>';
 }
 
 export function createMindMapUI({ reduced }) {
@@ -29,7 +16,7 @@ export function createMindMapUI({ reduced }) {
     let introSeen = false, readyAt = 0, engaged = false;
     const timers = new Set();
     try { introSeen = localStorage.getItem(SEEN_KEY) === '1'; } catch {}
-    button.innerHTML = dottedSphereIcon();
+    button.innerHTML = mindMapIcon();
     function later(fn, ms) {
         const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms);
         timers.add(timer);
