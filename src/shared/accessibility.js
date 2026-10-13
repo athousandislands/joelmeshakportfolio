@@ -59,10 +59,12 @@ export function installAccessibility() {
         const atHome = mobile.dataset.page !== 'gallery';
         hide(document.getElementById('home'), !atHome);
         hide(document.getElementById('gallery'), atHome);
-        const profile = document.getElementById('home').dataset.section !== 'projects';
+        const section = document.getElementById('home').dataset.section;
+        const profile = section === 'profile';
         hide(document.getElementById('profile-panel'), !profile);
         hide(document.getElementById('profile-clock'), !profile);
-        hide(document.getElementById('projects-panel'), profile);
+        hide(document.getElementById('projects-panel'), section !== 'projects');
+        hide(document.getElementById('mobile-mindmap-panel'), section !== 'mindmap');
     };
     new MutationObserver(syncMobile).observe(mobile, { attributes: true, attributeFilter: ['data-page'], subtree: false });
     new MutationObserver(syncMobile).observe(document.getElementById('home'), { attributes: true, attributeFilter: ['data-section'] });

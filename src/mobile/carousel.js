@@ -171,7 +171,7 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
                there rather than at the carousel's own starting card. The
                carousel below still primes its meta/name state, so it's fully
                ready the instant a project icon is tapped. */
-            Tab.setActive(homeEl.dataset.section === 'projects' ? activeProject : PROFILE_TAB, true);
+            if (homeEl.dataset.section !== 'mindmap') Tab.setActive(homeEl.dataset.section === 'projects' ? activeProject : PROFILE_TAB, true);
             nameEl.textContent = PROJECTS[activeProject].name;
             nameEl.classList.add('ready');
             collectionEl.textContent = c.collection;

@@ -1,3 +1,4 @@
+import { createMindMapUI } from './mind-map-ui.js';
 import { createGallery } from './gallery.js';
 import { createCarousel } from './carousel.js';
 import { PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, VIDEOS, ICONS } from './project-data.js';
@@ -89,10 +90,12 @@ export function initMobile() {
         Contact.close();
 
         if (page === 'gallery') {
+            MindMap.leave();
             pages.home.classList.remove('arrive');
             Gallery.enter();
         } else {
             Gallery.leave();
+            if (pages.home.dataset.section === 'mindmap') MindMap.enter();
             /* Restart the staggered arrival every time we come back. */
             pages.home.classList.remove('arrive');
             void pages.home.offsetWidth;
@@ -314,8 +317,10 @@ export function initMobile() {
                and without this guard enterSection() would snap a live scroll
                to a card boundary on every project swiped past. */
             if (home.dataset.section === section) return;
-            if (section === 'profile') Carousel.interrupt({ sync: false });
+            if (section !== 'projects') Carousel.interrupt({ sync: false });
+            if (home.dataset.section === 'mindmap') MindMap.leave();
             home.dataset.section = section;
+            if (section === 'mindmap' && currentPage === 'home') MindMap.enter();
             /* Re-measure on entering the projects section. The panels now
                keep real layout boxes in both states, but re-running layout
                here guarantees slideW reflects the current viewport before
@@ -432,7 +437,9 @@ export function initMobile() {
         }
 
         function setActive(i, instant) {
-            if (i < 0 || i === active) return;
+            if (i < 0) return;
+            const section = PROJECTS[i].isProfile ? 'profile' : 'projects';
+            if (i === active) { Profile.setSection(section); return; }
             active = i;
             btns.forEach((b, k) => { if (b) b.setAttribute('aria-selected', String(k === i)); });
             if (instant) indicator.style.transition = 'none';
@@ -453,9 +460,10 @@ export function initMobile() {
                this, layout()'s positioning (gated on active >= 0) had nothing
                to work with until Carousel.reveal() set it ~1.3s later, so the
                indicator sat at its raw CSS position and visibly snapped. */
-            setActive(PROFILE_TAB, true);
+            if (homeEl.dataset.section !== 'mindmap') setActive(PROFILE_TAB, true);
             bar.classList.add('in');
             Nav.reveal();
+            MindMap.reveal();
             setTimeout(() => {
                 /* Iterate `order`, NOT `btns` — btns carries a null in the
                    Profile slot since Profile became the round button beside
@@ -573,6 +581,12 @@ export function initMobile() {
        play at once, not one-decoder-at-a-time.
        ========================================================================== */
     const Gallery = createGallery({ root, REDUCED, clamp });
+    const MindMap = createMindMapUI({ reduced: REDUCED });
+    document.getElementById('nav-mindmap-btn').addEventListener('click', () => Profile.setSection('mindmap'));
+    window.addEventListener('pagehide', () => MindMap.leave());
+    window.addEventListener('pageshow', event => {
+        if (event.persisted && currentPage === 'home' && pages.home.dataset.section === 'mindmap') MindMap.enter();
+    });
 
 
     /* ==========================================================================

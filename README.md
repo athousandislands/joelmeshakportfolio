@@ -35,6 +35,16 @@ Use Node.js 24 (or 22.12+). The lockfile records exact versions. Three.js 0.160.
 
 Project taps and the existing sensitive draggable tabs now use a short coordinated fade instead of racing through unrelated images. Artwork, title, caption, dots and tab selection change together. Touching the image cancels any pending programmed change immediately; native image swiping updates its caption once the scroll settles. All 41 carousel images still load eagerly, and a destination must be decoded before its transition starts. The Gallery name, gallery experience and spacing remain unchanged.
 
+## Mobile Mind Map
+
+The dotted sphere beside Projects opens a separate mobile view with all 76 existing images. Its WebGL dependencies and textures load only on entry. The map shares the desktop globe's composition and image movement, with mobile sizing, two texture workers, gradual GPU uploads and a rendering resolution capped at 1.5× (lowered after sustained slow rendering). Every image must be ready before the reveal; failures offer Retry or a fixed, evenly distributed 32-image version rather than showing blank cards.
+
+Drag rotates the globe; touching and holding brings nearby images forward immediately, just like desktop. Moving the touch moves the effect while rotating, without cancelling the hold. The image travel uses the desktop amount; mobile adjusts the camera framing and uses a full-screen canvas to avoid a visible clipping boundary. Two-finger gestures use the existing camera controls. The same scene supports arrow-key rotation and Space to engage. Leaving for Profile, Projects or Gallery disposes the renderer, textures, workers, listeners and animation loop. Returning prepares the map again using the browser's asset cache. A hidden tab stops rendering.
+
+“Touch to interact” fades out on engagement. “Visuals that inspire my design thinking.” fades in below it only on the first successful visit, remains readable for at least three seconds, and fades after engagement or six seconds. The first-visit flag is saved in local storage; blocked storage falls back to the current page session. No visible label precedes the map.
+
+Browser checks are useful for layout and behavior, but actual iPhone/Android testing is still required for frame rate, heat and memory before launch. The 32-image fallback is available on loading/graphics failure; it does not silently remove images based on a guessed device tier.
+
 ## Preparing media
 
 Generated media is committed, so ordinary installation/building does not require ffmpeg or Python. Original media is never overwritten.

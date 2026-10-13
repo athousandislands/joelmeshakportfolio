@@ -340,6 +340,7 @@
                 <div id="tab-indicator" class="capsule"></div>
                 <div id="tab-icons"></div>
             </div>
+            <button id="nav-mindmap-btn" class="glass" type="button" aria-label="Mind Map" aria-pressed="false"></button>
         </div>
 
         <div id="profile-panel">
@@ -356,6 +357,21 @@
                 <div id="collection"></div>
                 <div id="position-dots"></div>
                 <p id="description"></p>
+            </div>
+        </div>
+
+        <div id="mobile-mindmap-panel" aria-label="Mind Map">
+            <div id="mobile-mindmap-stage" tabindex="0" role="group" aria-label="Interactive sphere of design references. Drag to rotate; press and hold to bring images forward. Arrow keys rotate; Space brings images forward.">
+                <div id="mobile-mindmap-loading" role="status" aria-live="polite">Preparing…</div>
+                <div id="mobile-mindmap-error" hidden>
+                    <p>The map couldn’t finish opening. Please try again.</p>
+                    <button id="mobile-mindmap-retry" type="button" class="glass">Try again</button>
+                    <button id="mobile-mindmap-lite" type="button" class="glass">Try 32 images</button>
+                </div>
+            </div>
+            <div id="mobile-mindmap-caption" aria-live="polite">
+                <p id="mobile-mindmap-hint" hidden>Touch to interact</p>
+                <p id="mobile-mindmap-intro" hidden>Visuals that inspire my design thinking.</p>
             </div>
         </div>
 

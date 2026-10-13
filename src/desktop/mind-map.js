@@ -1,6 +1,6 @@
 import { createPreparation } from '../shared/preparation.js';
 
-export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, Governor, guardContext, Assets, Idle, Loop, REDUCED_MOTION, gsap, clamp, mix }) {
+export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, Governor, guardContext, Assets, Idle, Loop, REDUCED_MOTION, gsap, clamp, mix }, options = {}) {
     const MINDMAP = {
         useKTX2: true,
         ktx2Dir: 'assets/projects/mind-map/gallery/ktx2/',
@@ -15,8 +15,8 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
         const MM_FOV = 60;
         const GLOBE_RADIUS = 2.4;
 
-        const container3 = document.getElementById('mindmap-canvas-container');
-        const loadingEl = document.getElementById('mindmap-loading');
+        const container3 = options.container || document.getElementById('mindmap-canvas-container');
+        const loadingEl = options.loading || document.getElementById('mindmap-loading');
 
         const imageFiles = [
             "1.jpeg","2.jpeg","3.png","4.jpeg","5.jpeg","6.jpeg","7.png","8.jpeg","9.jpeg","10.jpeg",
@@ -33,13 +33,14 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
         const FULL_N = imageFiles.length;
 
         /* ---- TILE SET ---------------------------------------------------------
-           Every device renders every tile. The random 33-of-76 subset that used
+           Desktop renders every tile. The random 33-of-76 subset that used
            to be selected here for LOW_POWER devices is gone — it was the single
            thing making an iPad Mini's mind map visibly poorer than a desktop's,
            and it is not being replaced with a narrower condition. */
-        const N = FULL_N;
-        const imagePaths = allImagePaths;
-        const ktx2Paths = allKtx2Paths;
+        const N = Math.min(options.tileCount || FULL_N, FULL_N);
+        const indices = Array.from({ length: N }, (_, i) => Math.floor(i * FULL_N / N));
+        const imagePaths = indices.map(i => allImagePaths[i]);
+        const ktx2Paths = indices.map(i => allKtx2Paths[i]);
 
         /* ---- DENSITY --------------------------------------------------------
            With the reduced subset gone, the sphere always carries the full tile
@@ -108,8 +109,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
            devices get two. Four also matches KTX2Loader's default worker pool —
            going wider just queues behind it while holding more payloads in
            flight. */
-        const NET_BATCH = 4;
-        const TRANSCODE_BATCH = 4;
+                const TRANSCODE_BATCH = options.workerLimit || 4;
 
         const TILE_PX = 512;
 
@@ -221,10 +221,12 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             if (ktx2Loader && !ktx2Disabled) {
                 try {
                     const tex = await ktx2Loader.loadAsync(ktx2Paths[i]);
+                    if (signal.aborted) { tex.dispose(); throw new DOMException('Aborted', 'AbortError'); }
                     if (ktx2Hits === 0) console.info('[scene3] KTX2 active — compressed textures in use.');
                     ktx2Hits += 1;
                     return finishTexture(tex);
                 } catch (e) {
+                    if (signal.aborted) throw e;
                     /* .ktx2 not generated yet, or transcoding unavailable. Fall
                        back for this tile — and if the first few all fail, stop
                        trying so we don't fire 76 doomed requests. */
@@ -301,6 +303,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             loadingEl.style.opacity = 0;
             loadingEl.setAttribute('aria-hidden', 'true');
             globe.visible = true;
+            options.onReady?.();
 
             if (REDUCED_MOTION) {
                 globe.scale.setScalar(1);
@@ -343,7 +346,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             summaryLogged = true;
             console.info(
                 `[scene3] tiles: ${ktx2Hits} via KTX2, ${ktx2Misses} via image fallback, ` +
-                `${failedTiles.size} failed (${N}${N < FULL_N ? ` of ${FULL_N}, low-power subset` : ''})`
+                `${failedTiles.size} failed (${N}${N < FULL_N ? ` of ${FULL_N}, selected subset` : ''})`
             );
         }
 
@@ -366,7 +369,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             try {
                 ktx2Loader = new KTX2Loader()
                     .setTranscoderPath(resolvedTranscoderPath)
-                    .detectSupport(renderer);          // scene 1's renderer
+                    .detectSupport(rendererMM || renderer);          // scene 1's renderer
                 ktx2Loader.setWorkerLimit(TRANSCODE_BATCH);
             } catch (e) {
                 console.warn('[scene3] KTX2Loader unavailable, using image fallback.', e);
@@ -442,7 +445,12 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
         }
 
         function maybeReveal() {
-            if (uploadedCount >= N) reveal();
+            if (uploadedCount < N) return;
+            if (options.strictReady && failedTiles.size) {
+                options.onError?.(new Error('Some Mind Map images could not be prepared.'));
+                return;
+            }
+            reveal();
         }
 
         function pumpUploads() {
@@ -477,11 +485,12 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
 
             const extent = 4.33;
             const halfTan = Math.tan(MM_FOV * Math.PI / 360);
-            const shapeFactor = Math.pow(Math.min(V.aspect, 1), 0.375);
+            const shapeFactor = options.fitRadius ? Math.min(V.aspect, 1) : Math.pow(Math.min(V.aspect, 1), 0.375);
             const minD = controls ? controls.minDistance : 4;
             const maxD = controls ? controls.maxDistance : 20;
-            const z = clamp(extent / (halfTan * shapeFactor), minD, maxD);
+            const z = clamp((options.fitRadius || extent) / (halfTan * shapeFactor), minD, maxD);
             camera.position.set(0, 0, z);
+            options.frameCamera?.(camera, V);
             if (controls) controls.update();
         }
 
@@ -496,7 +505,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             revealed = false;
             uploadQueue = [];
 
-            rendererMM = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+            rendererMM = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: options.powerPreference || 'high-performance' });
             rendererMM.setSize(V.width, V.height, false);
             rendererMM.domElement.style.width = '100%';
             rendererMM.domElement.style.height = '100%';
@@ -537,7 +546,10 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             /* If a handful of requests stall, reveal what we have rather than
                leaving the user on a loader forever. */
             revealTimeout = setTimeout(() => {
-                if (!revealed) reveal(`timeout, ${uploadedCount}/${N} ready`);
+                if (!revealed) {
+                    if (options.strictReady) options.onError?.(new Error('Mind Map preparation timed out.'));
+                    else reveal(`timeout, ${uploadedCount}/${N} ready`);
+                }
             }, REVEAL_HARD_TIMEOUT_MS);
         }
 
@@ -617,8 +629,10 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             /* targetHold accepts a boolean (mouse/touch, 1/0 as before) or a float
                0..1 (Pulse, partway into the range). The lerp-rate ternary
                below works for both — any truthy value uses the fast rate. */
+            const step = options.frameIndependent ? clamp(dt * 60, 0, 3) : 1;
+            const rate = value => options.frameIndependent ? 1 - Math.pow(1 - value, step) : value;
             const targetHold = typeof isPointerDown === 'number' ? isPointerDown : (isPointerDown ? 1 : 0);
-            holdFactor += (targetHold - holdFactor) * (isPointerDown ? 0.25 : 0.035);
+            holdFactor += (targetHold - holdFactor) * rate(isPointerDown ? 0.25 : 0.035);
 
             if (hitSphere) {
                 raycasterMM.setFromCamera(mouseMM, camera);
@@ -654,8 +668,8 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
                    globe already had. massBreath then scales the result, so the
                    mass expands and contracts as one body underneath it. Same
                    single multiplyScalar as before: no extra per-tile work. */
-                const idlePulse = (Math.sin(time * 1.2 + t.phase) + 1) * 0.5;
-                _target.copy(t.base).multiplyScalar((1 + idlePulse * 0.10) * massBreath);
+                const idlePulse = options.quietReduced && REDUCED_MOTION ? 0 : (Math.sin(time * 1.2 + t.phase) + 1) * 0.5;
+                _target.copy(t.base).multiplyScalar((1 + idlePulse * 0.10) * (options.quietReduced && REDUCED_MOTION ? 1 : massBreath));
 
                 if (isHovering) {
                     const distance = _hitPoint.distanceTo(t.base);
@@ -701,9 +715,9 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
                     const remaining = t.mesh.position.distanceToSquared(_target);
                     lerpSpeed = 0.19 + 0.26 * clamp(remaining * 0.55, 0, 1);
                 }
-                t.mesh.position.lerp(_target, lerpSpeed);
+                t.mesh.position.lerp(_target, rate(lerpSpeed));
                 _scale.set(scaleTarget, scaleTarget, scaleTarget);
-                t.mesh.scale.lerp(_scale, lerpSpeed);
+                t.mesh.scale.lerp(_scale, rate(lerpSpeed));
             }
 
             rendererMM.render(scene, camera);
