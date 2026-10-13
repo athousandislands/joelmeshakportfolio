@@ -31,6 +31,10 @@ Use Node.js 24 (or 22.12+). The lockfile records exact versions. Three.js 0.160.
 - `public/assets/`: originals and optimized renditions, still served at `/assets/...`.
 - `reference/portfolionew.html`: historical readable implementation, excluded from the production build. Edit `src/`, not this reference.
 
+## Mobile movement
+
+Project taps and the existing sensitive draggable tabs now use a short coordinated fade instead of racing through unrelated images. Artwork, title, caption, dots and tab selection change together. Touching the image cancels any pending programmed change immediately; native image swiping updates its caption once the scroll settles. All 41 carousel images still load eagerly, and a destination must be decoded before its transition starts. The Gallery name, gallery experience and spacing remain unchanged.
+
 ## Preparing media
 
 Generated media is committed, so ordinary installation/building does not require ffmpeg or Python. Original media is never overwritten.

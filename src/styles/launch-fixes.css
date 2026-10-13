@@ -21,3 +21,22 @@
 #mobile-root, #mobile-root #carousel, #mobile-root #gallery-scroll { touch-action: pan-x pan-y pinch-zoom; }
 [role="button"]:focus-visible, .dom-card:focus-visible, #mobile-root .gallery-play-btn:focus-visible { outline: 2px solid #595959; outline-offset: 4px; }
 @media (prefers-reduced-motion: reduce) { #mobile-root .profile-photo-inner { animation: none !important; } }
+
+/* One mobile project transition coordinates artwork, title, caption and selection. */
+#mobile-root #home.project-switching #carousel,
+#mobile-root #home.project-switching #project-name,
+#mobile-root #home.project-switching #meta {
+    transition: opacity var(--project-change-duration, 180ms) cubic-bezier(0.4, 0, 0.2, 1);
+}
+#mobile-root #home.project-switching #tab-indicator {
+    transition: transform var(--project-change-duration, 180ms) cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease;
+}
+#mobile-root #home.project-hiding #carousel,
+#mobile-root #home.project-hiding #project-name,
+#mobile-root #home.project-hiding #meta { opacity: 0; }
+/* Returning control to a touch must restore the current image immediately. */
+#mobile-root #home.project-direct #carousel,
+#mobile-root #home.project-direct #project-name,
+#mobile-root #home.project-direct #meta { transition: none; }
+
+#mobile-root #project-name.ready { opacity: 1; }

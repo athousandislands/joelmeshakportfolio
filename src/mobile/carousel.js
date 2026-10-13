@@ -1,5 +1,6 @@
+import { createProjectTransition } from './project-transition.js';
 
-export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Tab, Ticker, NO_ROUND, basename, derivedURL, REDUCED, clamp }) {
+export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Tab, NO_ROUND, basename, derivedURL, REDUCED, clamp }) {
     const Carousel = (() => {
         const el = document.getElementById('carousel');
         const nameEl = document.getElementById('project-name');
@@ -18,10 +19,9 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
         let slideW = 1;
         let active = -1;
         let activeProject = -1;
-        let tweening = false;
-        let metaTimer = null;
-        let metaTimer2 = null;
-        let nameTimer = null;
+        let settleTimer = null;
+        let pointerHeld = false;
+        let touchHeld = false;
         let revealed = false;
 
         CARDS.forEach((c, i) => {
@@ -81,35 +81,86 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
             });
         }
 
-        function paint() {
-            /* no-op — flat single-image carousel, nothing to update per-frame.
-               The `scrolling` flag, `tick` subscriber, Ticker registration
-               and idle timer that used to drive this at 60fps were removed
-               entirely (paint() does nothing, so every swipe and jump-tween
-               frame was starting a rAF subscriber to call an empty
-               function). Kept as a documented seam for future per-frame work. */
+        const SWITCH_MS = 180;
+        homeEl.style.setProperty('--project-change-duration', SWITCH_MS + 'ms');
+        const visible = () => homeEl.classList.contains('active') && homeEl.dataset.section === 'projects';
+
+        function syncCard(index, instant = true, select = visible()) {
+            index = clamp(index, 0, CARDS.length - 1);
+            active = index;
+            const card = CARDS[index];
+            activeProject = card.project;
+            if (!revealed && !select) return;
+            // Caption, dots and selection refer to one committed image.
+            nameEl.textContent = PROJECTS[card.project].name;
+            collectionEl.textContent = card.collection;
+            descEl.textContent = card.desc;
+            renderDots(card.collectionCount, card.posInCollection);
+            Tab.setActive(card.project, instant);
+        }
+
+        async function prepareImage(index) {
+            const image = imgs[index];
+            // All images are still requested eagerly. A project change waits
+            // for its existing request instead of revealing an empty card.
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    if (image.decode) await image.decode();
+                    else if (!image.complete) await new Promise((resolve, reject) => {
+                        image.addEventListener('load', resolve, { once: true });
+                        image.addEventListener('error', reject, { once: true });
+                    });
+                    if (image.naturalWidth) return;
+                } catch { /* The existing error handler can retry the original source. */ }
+            }
+            throw new Error('Project image could not be loaded');
+        }
+
+        const transition = createProjectTransition({
+            duration: SWITCH_MS,
+            prepare: prepareImage,
+            hide() {
+                homeEl.classList.remove('project-direct');
+                homeEl.classList.add('project-switching', 'project-hiding');
+                el.classList.add('tweening');
+            },
+            commit(index, instant) {
+                syncCard(index, instant, true);
+                // Change position only while hidden; no intermediate projects fly by.
+                el.scrollLeft = index * slideW;
+                if (!revealed) reveal();
+            },
+            reveal() { homeEl.classList.remove('project-hiding'); },
+            restore() {
+                homeEl.classList.add('project-direct');
+                homeEl.classList.remove('project-switching', 'project-hiding');
+                el.classList.remove('tweening');
+            },
+            onError: error => console.warn('[mobile carousel]', error.message),
+        });
+
+        function commitSettled() {
+            clearTimeout(settleTimer);
+            if (!visible() || transition.busy || pointerHeld || touchHeld) return;
+            const index = clamp(Math.round(el.scrollLeft / slideW), 0, CARDS.length - 1);
+            if (index !== active) syncCard(index, true);
+        }
+
+        function scheduleSettle() {
+            clearTimeout(settleTimer);
+            settleTimer = setTimeout(commitSettled, 120);
         }
 
         function onScroll() {
-            /* The element stops being a scroll container whenever the
-               projects section isn't the active one, and the browser resets
-               scrollLeft to 0 when that happens. That synthetic event must
-               not be read as the user having swiped back to the first card —
-               it would silently rewrite `active`, the tab and the meta block. */
-            if (homeEl.dataset.section !== 'projects') return;
-            if (!tweening) setActive(Math.round(el.scrollLeft / slideW));
+            if (!visible() || transition.busy) return;
+            // No halfway caption changes while the browser is still swiping/snapping.
+            scheduleSettle();
         }
 
-        function setActive(i) {
-            i = clamp(i, 0, CARDS.length - 1);
-            if (i === active) return;
-            active = i;
-            const c = CARDS[i];
-            if (c.project !== activeProject) {
-                activeProject = c.project;
-                if (revealed) { Tab.setActive(activeProject, false); setName(PROJECTS[activeProject].name, false); }
-            }
-            if (revealed) setMeta(c.collection, c.desc, c.posInCollection, c.collectionCount);
+        function interrupt({ sync = true } = {}) {
+            transition.cancel();
+            clearTimeout(settleTimer);
+            if (sync && visible()) syncCard(Math.round(el.scrollLeft / slideW), true);
         }
 
         function reveal() {
@@ -120,19 +171,13 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
                there rather than at the carousel's own starting card. The
                carousel below still primes its meta/name state, so it's fully
                ready the instant a project icon is tapped. */
-            Tab.setActive(PROFILE_TAB, true);
-            setName(PROJECTS[activeProject].name, true);
+            Tab.setActive(homeEl.dataset.section === 'projects' ? activeProject : PROFILE_TAB, true);
+            nameEl.textContent = PROJECTS[activeProject].name;
+            nameEl.classList.add('ready');
             collectionEl.textContent = c.collection;
             descEl.textContent = c.desc;
             renderDots(c.collectionCount, c.posInCollection);
             metaEl.classList.add('ready');
-        }
-
-        function setName(text, instant) {
-            if (instant) { nameEl.textContent = text; nameEl.style.opacity = 1; return; }
-            clearTimeout(nameTimer);
-            nameEl.classList.add('swap');
-            nameTimer = setTimeout(() => { nameEl.textContent = text; nameEl.classList.remove('swap'); }, 170);
         }
 
         let dotCount = -1;
@@ -149,60 +194,19 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
             [...dotsEl.children].forEach((d, i) => d.classList.toggle('active', i === activeIdx));
         }
 
-        function setMeta(collection, desc, posInCollection, collectionCount) {
-            clearTimeout(metaTimer);
-            clearTimeout(metaTimer2);
-            collectionEl.classList.add('swap');
-            descEl.classList.add('swap');
-            metaTimer = setTimeout(() => {
-                collectionEl.textContent = collection;
-                renderDots(collectionCount, posInCollection);
-                collectionEl.classList.remove('swap');
-            }, 150);
-            metaTimer2 = setTimeout(() => {
-                descEl.textContent = desc;
-                descEl.classList.remove('swap');
-            }, 150 + 70);
+        function jumpTo(index, instant = false) {
+            clearTimeout(settleTimer);
+            index = clamp(index, 0, CARDS.length - 1);
+            const hidden = !visible();
+            if (!hidden && index === active && Math.abs(el.scrollLeft - index * slideW) < 1) {
+                interrupt();
+                return;
+            }
+            return transition.request(index, { instant: REDUCED || instant || hidden });
         }
-
-        const JUMP_MS = 340;
-        let runGen = 0;   /* bumped on every jumpTo() call; a stale run() sees a
-                             mismatch and stops itself instead of fighting the
-                             newest tween over scrollLeft. */
-        function jumpTo(index, instant) {
-            const target = clamp(index, 0, CARDS.length - 1) * slideW;
-            const from = el.scrollLeft;
-            const delta = target - from;
-            if (Math.abs(delta) < 1) return;
-
-            el.classList.add('tweening');
-            tweening = true;
-
-            const c = CARDS[clamp(index, 0, CARDS.length - 1)];
-            active = clamp(index, 0, CARDS.length - 1);
-            if (c.project !== activeProject) { activeProject = c.project; setName(PROJECTS[activeProject].name, false); }
-            setMeta(c.collection, c.desc, c.posInCollection, c.collectionCount);
-
-            /* `instant` is used when the carousel is not on screen yet (the
-               Projects button pressing through from Profile) — same end
-               state, no tween nobody can see. */
-            if (REDUCED || instant) { el.scrollLeft = target; el.classList.remove('tweening'); tweening = false; paint(); return; }
-
-            const gen = ++runGen;
-            const t0 = performance.now();
-            Ticker.add(function run() {
-                if (gen !== runGen) return false;
-                const p = clamp((performance.now() - t0) / JUMP_MS, 0, 1);
-                const e = p === 1 ? 1 : 1 - Math.pow(2, -10 * p);
-                el.scrollLeft = from + delta * e;
-                paint();
-                if (p < 1) return true;
-                el.classList.remove('tweening');
-                tweening = false;
-                return false;
-            });
+        function jumpToProject(project, instant) {
+            return jumpTo(PROJECT_START[project], instant);
         }
-        function jumpToProject(pi, instant) { Tab.setActive(pi, false); jumpTo(PROJECT_START[pi], instant); }
 
         /* Viewport width the last full measurement was taken against, so
            enterSection() can tell a genuinely stale layout from a fresh one. */
@@ -214,10 +218,24 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
             const fr = frames[0].getBoundingClientRect();
             frameW = fr.width; frameH = fr.height;
             natural.forEach((n, i) => { if (n) sizeImage(i); });
-            paint();
         }
 
         el.addEventListener('scroll', onScroll, { passive: true });
+        el.addEventListener('scrollend', commitSettled, { passive: true });
+        el.addEventListener('pointerdown', () => { pointerHeld = true; interrupt(); }, { passive: true });
+        el.addEventListener('pointercancel', () => { pointerHeld = false; scheduleSettle(); }, { passive: true });
+        window.addEventListener('pointerup', () => {
+            if (!pointerHeld) return;
+            pointerHeld = false;
+            scheduleSettle();
+        }, { passive: true });
+        el.addEventListener('touchstart', () => { touchHeld = true; interrupt(); }, { passive: true });
+        const endTouch = () => { touchHeld = false; scheduleSettle(); };
+        el.addEventListener('touchend', endTouch, { passive: true });
+        el.addEventListener('touchcancel', endTouch, { passive: true });
+        el.addEventListener('wheel', () => interrupt({ sync: false }), { passive: true });
+        el.addEventListener('keydown', () => interrupt());
+        document.addEventListener('visibilitychange', () => { if (document.hidden) interrupt({ sync: false }); });
 
         /* Starts on the SECOND image of the first project rather than the
            first — landing straight on a state where the carousel already reads
@@ -228,9 +246,8 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
             layout();
             loadAll();
             el.scrollLeft = START_INDEX * slideW;
-            setActive(START_INDEX);
+            syncCard(START_INDEX);
             el.classList.add('ready');
-            paint();
         }
 
         /* Called the moment projects becomes the active section. scrollLeft
@@ -247,10 +264,9 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
             if (measuredW !== window.innerWidth || !(slideW > 1)) layout();
             const i = active < 0 ? START_INDEX : active;
             el.scrollLeft = i * slideW;
-            paint();
         }
 
-        return { start, layout, enterSection, jumpTo, jumpToProject, reveal };
+        return { start, layout, enterSection, jumpTo, jumpToProject, reveal, interrupt };
     })();
     return Carousel;
 }

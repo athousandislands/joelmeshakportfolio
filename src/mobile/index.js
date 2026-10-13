@@ -18,30 +18,6 @@ export function initMobile() {
     const derivedURL = (src, cssWidth) => imageUrl(src, cssWidth, DPR);
 
     /* ==========================================================================
-       DATA
-       ========================================================================== */
-    /* ==========================================================================
-       TICKER — one rAF for the whole app; stops itself when nothing subscribes.
-       ========================================================================== */
-    const Ticker = (() => {
-        const subs = new Set();
-        let running = false;
-        function frame() {
-            if (!subs.size) { running = false; return; }
-            requestAnimationFrame(frame);
-            subs.forEach(fn => {
-                let alive = true;
-                try { alive = fn(); } catch (e) { console.error(e); alive = false; }
-                if (alive === false) subs.delete(fn);
-            });
-        }
-        return {
-            add(fn) { subs.add(fn); if (!running) { running = true; requestAnimationFrame(frame); } },
-            remove(fn) { subs.delete(fn); }
-        };
-    })();
-
-    /* ==========================================================================
        ROOT + ROUTER
        ========================================================================== */
     const root = document.getElementById('mobile-root');
@@ -104,6 +80,7 @@ export function initMobile() {
 
     function goto(page) {
         if (page === currentPage) return;
+        Carousel.interrupt({ sync: false });
         currentPage = page;
         root.dataset.page = page;
         switchBtns.forEach(b => b.setAttribute('aria-selected', String(b.dataset.page === page)));
@@ -337,6 +314,7 @@ export function initMobile() {
                and without this guard enterSection() would snap a live scroll
                to a card boundary on every project swiped past. */
             if (home.dataset.section === section) return;
+            if (section === 'profile') Carousel.interrupt({ sync: false });
             home.dataset.section = section;
             /* Re-measure on entering the projects section. The panels now
                keep real layout boxes in both states, but re-running layout
@@ -517,6 +495,7 @@ export function initMobile() {
                one jittery expanded-bar tap left openProjects()'s `if
                (dragMoved) return` permanently blocking the Projects pill. */
             dragMoved = false;
+            Carousel.interrupt();
             /* No indicator to grab while the bar is a button. */
             if (collapsed()) return;
             dragging = true;
@@ -577,13 +556,12 @@ export function initMobile() {
     const basename = (p) => p.split('/').pop();
 
     /* ==========================================================================
-       CAROUSEL — one dominant image per swipe, fixed-size frame via
-       object-fit:contain so it never drives layout. No windowing: every src
-       set immediately. jumpTo() tags each run with a generation counter the
-       running tween checks every frame, so a second tap cancels the first
-       instead of both fighting over scrollLeft.
+       CAROUSEL — one dominant image per native swipe, fixed-size frame via
+       object-fit:contain so it never drives layout. Every src is assigned
+       immediately. The shared project-transition controller owns the fade,
+       image/caption commit and cancellation on a new gesture.
        ========================================================================== */
-    const Carousel = createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Tab, Ticker, NO_ROUND, basename, derivedURL, REDUCED, clamp });
+    const Carousel = createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Tab, NO_ROUND, basename, derivedURL, REDUCED, clamp });
 
     /* ==========================================================================
        GALLERY — Echo-style vertical 3D carousel, ported from the user's
