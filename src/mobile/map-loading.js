@@ -5,10 +5,11 @@ export const MAP_COPY = [
     // Short excerpts verified against the sources below; attribution is visible.
     // https://www.moma.org/artists/370-jean-michel-basquiat
     '“I cross out words so you will see them more.” — Jean-Michel Basquiat',
-    // https://www.gq.com/video/watch/virgil-abloh-kanye-off-white-video-ian-connor-luka-sabbat
-    '“It’s all like an open book diary for me to be myself.” — Virgil Abloh',
-    // https://cfda.com/news/fashion-pays-tribute-to-virgil-abloh/
-    '“You can do it too.” — Virgil Abloh',
+    // https://www.dazeddigital.com/fashion/article/54932/1/virgil-abloh-inspiring-powerful-quotes-louis-vuitton-off-white
+    '“Life is so short you can’t waste even a day subscribing to what someone thinks you can do versus knowing what you can do.” — Virgil Abloh',
+    // https://www.palaisgalliera.paris.fr/sites/galliera/files/cp_dp_visuels/dossiers_de_presse/dp_lbl_elbaz_vweb_complet_eng.pdf (p. 15)
+    '“Everything I do is for the 17-year-old version of myself.” — Virgil Abloh',
+
 ];
 
 // An eased estimate of preparation work, not a downloaded-byte percentage.
