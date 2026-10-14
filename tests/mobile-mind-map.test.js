@@ -149,3 +149,14 @@ test('mobile focus gains 3% travel while neighboring travel drops 10%, with iden
     }
     assert.equal(leaders,1); assert.ok(neighbors>1);
 });
+
+test('background preparation reports upload progress and completes without drawing the globe',async t=>{
+    const progress=[];
+    const view=sceneSetup(t,55,false,{onProgress:value=>progress.push(value)});
+    view.scene.mount();await view.scene.prewarm({force:true});
+    assert.equal(view.renders.length,0);assert.equal(view.ready,0);
+    assert.ok(progress.at(-1)<=.7);
+    for(let i=0;i<14;i++) view.scene.prepareFrame();
+    assert.equal(view.ready,1);assert.equal(view.uploads.length,55);assert.equal(view.renders.length,0);
+    assert.equal(progress.at(-1),1);assert.ok(progress.every((v,i)=>!i||v>=progress[i-1]));
+});

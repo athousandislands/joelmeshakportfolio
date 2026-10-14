@@ -144,3 +144,32 @@
 @media (prefers-reduced-motion: reduce) {
     #mobile-root #nav-mindmap-btn.mindmap-discover .mindmap-orbit-dots { animation: none; }
 }
+
+/* Loading uses the same three-pixel track as the Gallery scrubber. */
+#mobile-root .mindmap-loading-track {
+    width: min(240px, 68vw); height: 3px; border-radius: 2px;
+    background: rgba(45, 45, 45, .26); overflow: hidden;
+}
+#mobile-root #mindmap-loading-fill { display: block; width: 0; height: 100%; background: #fff; }
+#mobile-root #mindmap-loading-number { font-size: .875rem; font-variant-numeric: tabular-nums; }
+#mobile-root #mindmap-loading-copy {
+    font-size: .875rem; font-weight: 400; line-height: 1.5;
+    color: var(--ink-soft); max-width: 32ch; margin: 12px auto 0;
+    min-height: 7.5em; opacity: 1; transition: opacity .35s ease;
+}
+#mobile-root #mindmap-loading-copy.changing { opacity: 0; }
+#mobile-root #gallery-swipe-hint {
+    position: absolute; left: var(--edge); right: var(--edge);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 34px); z-index: 5;
+    margin: 0; text-align: center; font-size: .875rem; color: var(--ink-soft);
+    pointer-events: none; opacity: 0; transition: opacity .5s ease;
+}
+#mobile-root #gallery-swipe-hint[hidden] { display: none; }
+#mobile-root #gallery-swipe-hint.shown { opacity: 1; animation: gallerySwipeNudge 3.2s ease-in-out .6s 3; }
+@keyframes gallerySwipeNudge { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+#mobile-root[data-orient="landscape"] #gallery-swipe-hint { left: auto; right: 24px; bottom: 18px; text-align: right; }
+#mobile-root[data-orient="landscape"] #mindmap-loading-copy { min-height: 4.5em; max-width: 55ch; }
+@media (prefers-reduced-motion: reduce) {
+    #mobile-root #gallery-swipe-hint.shown { animation: none; }
+    #mobile-root #mindmap-loading-copy { transition: none; }
+}

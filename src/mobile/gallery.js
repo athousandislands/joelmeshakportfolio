@@ -1,4 +1,5 @@
 import { mobileVideo, videoPoster } from '../shared/media.js';
+import { createGalleryHint } from './gallery-hint.js';
 export function createGallery({ root, REDUCED, clamp }) {
     const Gallery = (() => {
         const page = document.getElementById('gallery');
@@ -6,6 +7,11 @@ export function createGallery({ root, REDUCED, clamp }) {
         const spacerEl = document.getElementById('gallery-scroll-spacer');
         const viewportEl = document.getElementById('gallery-viewport');
         const welcomeEl = document.getElementById('gallery-welcome');
+        let hintStorage;
+        try { hintStorage = window.localStorage; } catch {}
+        const swipeHint = createGalleryHint({ element: document.getElementById('gallery-swipe-hint'), storage: hintStorage, reduced: REDUCED });
+        scrollEl.addEventListener('pointermove', event => { if (event.buttons || event.pointerType === 'touch') swipeHint.dismiss(); }, {passive:true});
+        scrollEl.addEventListener('keydown', swipeHint.dismiss);
 
         /* Every entry points at its real source file directly — see the
            video.src assignment below for why. */
@@ -394,6 +400,7 @@ export function createGallery({ root, REDUCED, clamp }) {
 
         scrollEl.addEventListener('scroll', () => {
             targetScroll = scrollEl.scrollTop;
+            if (targetScroll > 8) swipeHint.dismiss();
             if (!hasSwiped && targetScroll > 8) dismissWelcome();
             if (scrollEl.scrollTop === 0) {
                 cards.forEach(rec => { if (!rec.video.paused) pauseCard(rec); });
@@ -420,6 +427,7 @@ export function createGallery({ root, REDUCED, clamp }) {
 
         /* ---- public API ---- */
         function enter() {
+            swipeHint.enter();
             running = true;
             lastFrameTime = 0;
             currentScroll = 0; targetScroll = 0;
@@ -446,6 +454,7 @@ export function createGallery({ root, REDUCED, clamp }) {
         }
 
         function leave() {
+            swipeHint.dismiss();
             running = false;
             clearTimeout(welcomeStartTimer);
             clearTimeout(welcomeTimeout);

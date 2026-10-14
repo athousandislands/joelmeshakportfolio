@@ -2,13 +2,16 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { gsap } from 'gsap';
+import { createMapQuality } from './map-quality.js';
 import { createMindMap } from '../desktop/mind-map.js';
 
 // A mobile host for the existing scene: no folders, desktop renderer or camera.
-export function createMobileMap({ stage, loading, tileCount, reduced, onReady, onError, onEngage }) {
+export function createMobileMap({ stage, loading, tileCount, reduced, onReady, onError, onEngage, onProgress }) {
     let disposed = false, paused = true, frame = 0, previous = 0, elapsed = 0, render = null;
-    let ratio = Math.min(devicePixelRatio || 1, 1.5), ratioChanged = null;
-    let sampleStart = 0, frames = 0, slowWindows = 0;
+    const quality = createMapQuality(devicePixelRatio);
+    let ratio = quality.ratio, ratioChanged = null;
+    let prepareFrame = 0, preparing = false, hasEntered = false;
+    let sampleStart = 0, frames = 0;
     const subscribers = new Set();
     // Match wide desktop's image travel. The scene's narrow-screen boost
     // would otherwise multiply protrusion by 1.45 on a portrait phone.
@@ -20,14 +23,16 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         listeners.push(() => target.removeEventListener(type, fn, options));
     }
     function fail(error) { if (!disposed) onError(error); }
-    function size() {
+    function size(force = false) {
         const box = stage.getBoundingClientRect();
         if (box.width < 1 || box.height < 1) return;
-        if (V.width === box.width && V.height === box.height) return;
+        if (!force && V.width === box.width && V.height === box.height) return;
         V.width = box.width; V.height = box.height; V.aspect = box.width / box.height;
         subscribers.forEach(fn => fn());
     }
     size();
+    if (V.width === 1) { V.width = window.innerWidth; V.height = window.innerHeight; V.aspect = V.width / V.height; }
+    stage.dataset.pixelRatio = String(ratio);
     const scene = createMindMap({
         THREE, OrbitControls, KTX2Loader, V, renderer: null,
         Governor: { ratioFor: () => ratio, register(key, page, fn) { ratioChanged = fn; fn(ratio); }, unregister() { ratioChanged = null; } },
@@ -41,7 +46,7 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         Loop: { register(page, fn) { render = fn; } },
         REDUCED_MOTION: reduced, gsap, clamp, mix: (a, b, t) => a + (b - a) * t,
     }, {
-        container: stage, loading, tileCount, strictReady: true,
+        container: stage, loading, tileCount, strictReady: true, onProgress, frameIndependent: true, loadingTimeout: 90000,
         pushScale: 1.06, holdPushScale: 1.25, focusPushScale: 1.03, neighborPushScale: 0.9, swayScale: 1.32, effectRadiusScale: 1.08,
         globeTilt: { x: 0, y: 0.21 }, polarRange: [0.35, Math.PI - 0.35], workerLimit: 2, fitRadius: 3.55, tileSize: 0.78 * Math.sqrt(76 / tileCount), quietReduced: true,
         powerPreference: 'default',
@@ -57,10 +62,11 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
             camera.setViewOffset(viewport.width, viewport.height, 0, viewport.height / 2 - center, viewport.width, viewport.height);
         },
         onReady() {
+            preparing = false; cancelAnimationFrame(prepareFrame); prepareFrame = 0;
             stage.dataset.ready = 'true'; stage.dataset.tiles = String(tileCount); onReady();
         }, onError: fail,
     });
-    const observer = new ResizeObserver(size);
+    const observer = new ResizeObserver(() => size());
     const pointers = new Set();
     const clearHold = () => scene.clearPointer();
     const position = event => {
@@ -99,13 +105,14 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         previous = now; elapsed += dt;
         render?.(dt, elapsed);
         if (disposed || paused) return;
+        if (stage.dataset.ready !== 'true') { frame = requestAnimationFrame(tick); return; }
         frames++;
         if (!sampleStart) sampleStart = now;
         if (now - sampleStart >= 2000) {
             const fps = frames * 1000 / (now - sampleStart);
-            slowWindows = fps < 40 ? slowWindows + 1 : 0;
-            if (slowWindows >= 2 && ratio > 0.85) {
-                ratio = Math.max(0.85, ratio - 0.25); ratioChanged?.(ratio); slowWindows = 0;
+            const nextRatio = quality.sample(fps);
+            if (nextRatio !== ratio) {
+                ratio = nextRatio; ratioChanged?.(ratio); stage.dataset.pixelRatio = String(ratio);
             }
             stage.dataset.fps = String(Math.round(fps));
             frames = 0; sampleStart = now;
@@ -113,10 +120,25 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         frame = requestAnimationFrame(tick);
     }
     listen(document, 'visibilitychange', () => {
-        clearHold(); pointers.clear(); cancelAnimationFrame(frame); frame = 0; previous = 0; sampleStart = 0; frames = 0;
-        if (!document.hidden && !disposed && !paused) frame = requestAnimationFrame(tick);
+        clearHold(); pointers.clear(); cancelAnimationFrame(frame); cancelAnimationFrame(prepareFrame); prepareFrame = 0; frame = 0; previous = 0; sampleStart = 0; frames = 0;
+        quality.reset();
+        if (!document.hidden && !disposed) {
+            if (!paused) frame = requestAnimationFrame(tick);
+            else if (preparing) prepareFrame = requestAnimationFrame(prepareTick);
+        }
     });
+    function prepareTick() {
+        prepareFrame = 0;
+        if (disposed || !preparing || document.hidden || !paused) return;
+        scene.prepareFrame();
+        if (preparing) prepareFrame = requestAnimationFrame(prepareTick);
+    }
     return {
+        prepare() {
+            preparing = true;
+            scene.mount(); scene.setTouchSuppressed(true);
+            if (!document.hidden) prepareFrame = requestAnimationFrame(prepareTick);
+        },
         start() {
             scene.mount();
             if (disposed) return;
@@ -129,19 +151,21 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
             paused = true; cancelAnimationFrame(frame); frame = 0;
             clearHold(); pointers.clear(); observer.disconnect();
             scene.setTouchSuppressed(true);
+            if (preparing && !document.hidden) prepareFrame = requestAnimationFrame(prepareTick);
         },
         resume() {
             if (disposed || !paused) return;
-            paused = false; previous = 0; frames = 0; sampleStart = 0;
+            paused = false; previous = 0; frames = 0; sampleStart = 0; quality.reset();
+            cancelAnimationFrame(prepareFrame); prepareFrame = 0;
             scene.setTouchSuppressed(false);
-            size(); observer.observe(stage);
+            size(!hasEntered); hasEntered = true; observer.observe(stage);
             if (!document.hidden) frame = requestAnimationFrame(tick);
         },
         dispose() {
             if (disposed) return;
-            disposed = true; cancelAnimationFrame(frame); clearHold(); observer.disconnect();
+            disposed = true; cancelAnimationFrame(frame); cancelAnimationFrame(prepareFrame); clearHold(); observer.disconnect();
             listeners.forEach(remove => remove()); pointers.clear(); scene.dispose();
-            delete stage.dataset.ready; delete stage.dataset.tiles; delete stage.dataset.fps;
+            delete stage.dataset.ready; delete stage.dataset.tiles; delete stage.dataset.fps; delete stage.dataset.pixelRatio;
         },
     };
 }
