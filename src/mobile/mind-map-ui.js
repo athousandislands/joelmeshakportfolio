@@ -1,8 +1,9 @@
+import { createMindMapDiscovery } from './mind-map-discovery.js';
 import { createMapSession } from './mind-map-controller.js';
 
 // Equal-weight dots: one centre with six evenly spaced around it.
 export function mindMapIcon() {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="4.6" r="2.1"/><circle cx="18.41" cy="8.3" r="2.1"/><circle cx="18.41" cy="15.7" r="2.1"/><circle cx="12" cy="19.4" r="2.1"/><circle cx="5.59" cy="15.7" r="2.1"/><circle cx="5.59" cy="8.3" r="2.1"/></svg>';
+    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="12" cy="12" r="2.1"/><g class="mindmap-orbit-dots"><circle cx="12" cy="4.6" r="2.1"/><circle cx="18.41" cy="8.3" r="2.1"/><circle cx="18.41" cy="15.7" r="2.1"/><circle cx="12" cy="19.4" r="2.1"/><circle cx="5.59" cy="15.7" r="2.1"/><circle cx="5.59" cy="8.3" r="2.1"/></g></svg>';
 }
 
 export function createMindMapUI({ reduced }) {
@@ -15,6 +16,13 @@ export function createMindMapUI({ reduced }) {
     let readyAt = 0, engaged = false;
     const timers = new Set();
     button.innerHTML = mindMapIcon();
+    let discoveryStorage;
+    try { discoveryStorage = window.localStorage; } catch {}
+    const discovery = createMindMapDiscovery({
+        button, storage: discoveryStorage, reduced,
+        eligible: () => document.getElementById('mobile-root').dataset.page !== 'gallery'
+            && document.getElementById('home').dataset.section !== 'mindmap',
+    });
     function later(fn, ms) {
         const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms);
         timers.add(timer);
@@ -76,7 +84,8 @@ export function createMindMapUI({ reduced }) {
     return {
         enter() { button.setAttribute('aria-pressed', 'true'); session.enter(); },
         leave() { button.setAttribute('aria-pressed', 'false'); session.leave(); resetCopy(); stage.setAttribute('aria-busy', 'false'); },
-        dispose() { button.setAttribute('aria-pressed', 'false'); session.dispose(); resetCopy(); stage.setAttribute('aria-busy', 'false'); },
-        reveal() { button.classList.add('in'); },
+        dispose() { discovery.stop(); button.setAttribute('aria-pressed', 'false'); session.dispose(); resetCopy(); stage.setAttribute('aria-busy', 'false'); },
+        reveal() { button.classList.add('in'); discovery.enter(); },
+        discover() { discovery.enter(); },
     };
 }

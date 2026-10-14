@@ -112,7 +112,7 @@ test('a failed image never reveals a placeholder in the mobile map', async t => 
 });
 
 for (const locked of [true,false]) {
-    test(locked ? 'mobile rotation stays upright even when a vertical nudge is requested' : 'desktop retains its original vertical rotation', async t => {
+    test(locked ? 'optional polar lock keeps the camera upright when a vertical nudge is requested' : 'desktop retains its original vertical rotation', async t => {
         const view = sceneSetup(t,55,false,{lockPolar:locked});
         view.scene.mount(); await view.scene.prewarm({force:true}); view.frame(1/60,1);
         const radius = view.camera.position.length();

@@ -96,6 +96,7 @@ export function initMobile() {
         } else {
             Gallery.leave();
             if (pages.home.dataset.section === 'mindmap') MindMap.enter();
+            else MindMap.discover();
             /* Restart the staggered arrival every time we come back. */
             pages.home.classList.remove('arrive');
             void pages.home.offsetWidth;

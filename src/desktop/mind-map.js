@@ -527,6 +527,8 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             controls.maxDistance = 20;
             if (options.lockPolar) {
                 controls.minPolarAngle = controls.maxPolarAngle = Math.PI / 2;
+            } else if (options.polarRange) {
+                [controls.minPolarAngle, controls.maxPolarAngle] = options.polarRange;
             }
             /* Captured so both touch- and mouse-drag-rotate can be switched
                off and restored exactly while Pulse is live. */
@@ -687,7 +689,10 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
                        computed, so it reaches press-and-hold and Pulse
                        identically — `protrusion` carries the viewport
                        adaptation, not this. */
-                    const maxPush = (1.2935 + holdFactor * 2.9994) * protrusion * (options.pushScale || 1);
+                    // Extra held travel fades in with the existing hold envelope. With
+                    // no mobile options, desktop uses its original amount exactly.
+                    const heldTravel = 1 + holdFactor * ((options.holdPushScale || 1) - 1);
+                    const maxPush = (1.2935 + holdFactor * 2.9994) * protrusion * (options.pushScale || 1) * heldTravel;
 
                     if (distance < effectRadius) {
                         pushed = true;

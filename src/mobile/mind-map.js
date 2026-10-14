@@ -42,8 +42,8 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         REDUCED_MOTION: reduced, gsap, clamp, mix: (a, b, t) => a + (b - a) * t,
     }, {
         container: stage, loading, tileCount, strictReady: true,
-        pushScale: 1.06, swayScale: 1.2, effectRadiusScale: 1.08,
-        globeTilt: { x: 0, y: 0.21 }, lockPolar: true, workerLimit: 2, fitRadius: 3.55, tileSize: 0.78 * Math.sqrt(76 / tileCount), quietReduced: true,
+        pushScale: 1.06, holdPushScale: 1.25, swayScale: 1.32, effectRadiusScale: 1.08,
+        globeTilt: { x: 0, y: 0.21 }, polarRange: [0.35, Math.PI - 0.35], workerLimit: 2, fitRadius: 3.55, tileSize: 0.78 * Math.sqrt(76 / tileCount), quietReduced: true,
         powerPreference: 'default',
         frameCamera(camera, viewport) {
             camera.clearViewOffset();
@@ -86,7 +86,7 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
     listen(window, 'pointerup', end); listen(window, 'pointercancel', end);
     listen(stage, 'keydown', event => {
         if (paused || event.target !== stage || stage.dataset.ready !== 'true') return;
-        const rotations = { ArrowLeft: [-0.12, 0], ArrowRight: [0.12, 0] };
+        const rotations = { ArrowLeft: [-0.12, 0], ArrowRight: [0.12, 0], ArrowUp: [0, -0.12], ArrowDown: [0, 0.12] };
         if (rotations[event.key]) { event.preventDefault(); onEngage(); scene.nudgeRotation(...rotations[event.key]); }
         if (event.key === ' ') { event.preventDefault(); onEngage(); scene.setPointer(V.width / 2, V.height / 2); scene.setPointerDown(true); }
     });
