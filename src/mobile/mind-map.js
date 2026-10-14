@@ -6,7 +6,7 @@ import { createMindMap } from '../desktop/mind-map.js';
 
 // A mobile host for the existing scene: no folders, desktop renderer or camera.
 export function createMobileMap({ stage, loading, tileCount, reduced, onReady, onError, onEngage }) {
-    let disposed = false, frame = 0, previous = 0, elapsed = 0, render = null;
+    let disposed = false, paused = true, frame = 0, previous = 0, elapsed = 0, render = null;
     let ratio = Math.min(devicePixelRatio || 1, 1.5), ratioChanged = null;
     let sampleStart = 0, frames = 0, slowWindows = 0;
     const subscribers = new Set();
@@ -23,6 +23,7 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
     function size() {
         const box = stage.getBoundingClientRect();
         if (box.width < 1 || box.height < 1) return;
+        if (V.width === box.width && V.height === box.height) return;
         V.width = box.width; V.height = box.height; V.aspect = box.width / box.height;
         subscribers.forEach(fn => fn());
     }
@@ -41,7 +42,8 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         REDUCED_MOTION: reduced, gsap, clamp, mix: (a, b, t) => a + (b - a) * t,
     }, {
         container: stage, loading, tileCount, strictReady: true,
-        workerLimit: 2, fitRadius: 3.55, tileSize: 0.78 * Math.sqrt(76 / tileCount), quietReduced: true,
+        pushScale: 1.06, swayScale: 1.2, effectRadiusScale: 1.08,
+        globeTilt: { x: 0, y: 0.21 }, lockPolar: true, workerLimit: 2, fitRadius: 3.55, tileSize: 0.78 * Math.sqrt(76 / tileCount), quietReduced: true,
         powerPreference: 'default',
         frameCamera(camera, viewport) {
             camera.clearViewOffset();
@@ -66,7 +68,7 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         scene.setPointer(event.clientX - box.left, event.clientY - box.top);
     };
     listen(stage, 'pointerdown', event => {
-        if (event.button !== 0 || stage.dataset.ready !== 'true') return;
+        if (paused || event.button !== 0 || stage.dataset.ready !== 'true') return;
         pointers.add(event.pointerId);
         onEngage();
         position(event);
@@ -75,7 +77,7 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         scene.setPointerDown(true);
     }, { capture: true });
     listen(stage, 'pointermove', event => {
-        if (pointers.has(event.pointerId)) position(event);
+        if (!paused && pointers.has(event.pointerId)) position(event);
     }, { capture: true });
     const end = event => {
         pointers.delete(event.pointerId);
@@ -83,8 +85,8 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
     };
     listen(window, 'pointerup', end); listen(window, 'pointercancel', end);
     listen(stage, 'keydown', event => {
-        if (event.target !== stage || stage.dataset.ready !== 'true') return;
-        const rotations = { ArrowLeft: [-0.12, 0], ArrowRight: [0.12, 0], ArrowUp: [0, -0.12], ArrowDown: [0, 0.12] };
+        if (paused || event.target !== stage || stage.dataset.ready !== 'true') return;
+        const rotations = { ArrowLeft: [-0.12, 0], ArrowRight: [0.12, 0] };
         if (rotations[event.key]) { event.preventDefault(); onEngage(); scene.nudgeRotation(...rotations[event.key]); }
         if (event.key === ' ') { event.preventDefault(); onEngage(); scene.setPointer(V.width / 2, V.height / 2); scene.setPointerDown(true); }
     });
@@ -92,11 +94,11 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
     listen(stage, 'blur', clearHold);
     function tick(now) {
         frame = 0;
-        if (disposed || document.hidden) return;
+        if (disposed || paused || document.hidden) return;
         const dt = previous ? Math.min((now - previous) / 1000, 0.05) : 1 / 60;
         previous = now; elapsed += dt;
         render?.(dt, elapsed);
-        if (disposed) return;
+        if (disposed || paused) return;
         frames++;
         if (!sampleStart) sampleStart = now;
         if (now - sampleStart >= 2000) {
@@ -112,16 +114,28 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
     }
     listen(document, 'visibilitychange', () => {
         clearHold(); pointers.clear(); cancelAnimationFrame(frame); frame = 0; previous = 0; sampleStart = 0; frames = 0;
-        if (!document.hidden && !disposed) frame = requestAnimationFrame(tick);
+        if (!document.hidden && !disposed && !paused) frame = requestAnimationFrame(tick);
     });
     return {
         start() {
-            observer.observe(stage);
             scene.mount();
             if (disposed) return;
             const canvas = stage.querySelector('canvas');
             if (canvas) { canvas.setAttribute('aria-hidden', 'true'); canvas.style.touchAction = 'none'; }
-            frame = requestAnimationFrame(tick);
+            this.resume();
+        },
+        pause() {
+            if (disposed || paused) return;
+            paused = true; cancelAnimationFrame(frame); frame = 0;
+            clearHold(); pointers.clear(); observer.disconnect();
+            scene.setTouchSuppressed(true);
+        },
+        resume() {
+            if (disposed || !paused) return;
+            paused = false; previous = 0; frames = 0; sampleStart = 0;
+            scene.setTouchSuppressed(false);
+            size(); observer.observe(stage);
+            if (!document.hidden) frame = requestAnimationFrame(tick);
         },
         dispose() {
             if (disposed) return;

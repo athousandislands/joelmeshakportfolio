@@ -583,7 +583,7 @@ export function initMobile() {
     const Gallery = createGallery({ root, REDUCED, clamp });
     const MindMap = createMindMapUI({ reduced: REDUCED });
     document.getElementById('nav-mindmap-btn').addEventListener('click', () => Profile.setSection('mindmap'));
-    window.addEventListener('pagehide', () => MindMap.leave());
+    window.addEventListener('pagehide', event => event.persisted ? MindMap.leave() : MindMap.dispose());
     window.addEventListener('pageshow', event => {
         if (event.persisted && currentPage === 'home' && pages.home.dataset.section === 'mindmap') MindMap.enter();
     });

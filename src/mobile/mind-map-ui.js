@@ -12,10 +12,8 @@ export function createMindMapUI({ reduced }) {
     const errorPanel = document.getElementById('mobile-mindmap-error');
     const intro = document.getElementById('mobile-mindmap-intro');
     const hint = document.getElementById('mobile-mindmap-hint');
-    const SEEN_KEY = 'portfolio-mobile-mindmap-intro-seen';
-    let introSeen = false, readyAt = 0, engaged = false;
+    let readyAt = 0, engaged = false;
     const timers = new Set();
-    try { introSeen = localStorage.getItem(SEEN_KEY) === '1'; } catch {}
     button.innerHTML = mindMapIcon();
     function later(fn, ms) {
         const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms);
@@ -37,11 +35,8 @@ export function createMindMapUI({ reduced }) {
     function ready() {
         readyAt = performance.now();
         show(hint);
-        if (!introSeen) {
-            show(intro); introSeen = true;
-            try { localStorage.setItem(SEEN_KEY, '1'); } catch {}
-            later(() => hide(intro), 6000);
-        }
+        show(intro);
+        later(() => hide(intro), 6000);
     }
     function engage() {
         if (engaged || !readyAt) return;
@@ -51,16 +46,19 @@ export function createMindMapUI({ reduced }) {
     }
     const session = createMapSession({
         load: () => import('./mind-map.js'),
-        create: (module, tileCount) => module.createMobileMap({ stage, loading, tileCount, reduced, onReady: ready, onEngage: engage,
-            onError: error => queueMicrotask(() => {
-                if (!session.active) return;
-                session.leave(); showError(error);
-            }),
+        create: (module, tileCount, report) => module.createMobileMap({ stage, loading, tileCount, reduced, onReady: ready, onEngage: engage,
+            onError: error => queueMicrotask(() => report(error)),
         }),
         onLoading(count) {
             resetCopy(); errorPanel.hidden = true; loading.style.opacity = '1'; loading.setAttribute('aria-hidden', 'false');
             stage.dataset.state = 'loading'; stage.setAttribute('aria-busy', 'true');
             document.getElementById('mobile-mindmap-lite').hidden = count === 32;
+        },
+        onResume() {
+            resetCopy(); errorPanel.hidden = true;
+            const complete = stage.dataset.ready === 'true';
+            stage.setAttribute('aria-busy', String(!complete));
+            if (complete) ready();
         },
         onError: showError,
     });
@@ -78,6 +76,7 @@ export function createMindMapUI({ reduced }) {
     return {
         enter() { button.setAttribute('aria-pressed', 'true'); session.enter(); },
         leave() { button.setAttribute('aria-pressed', 'false'); session.leave(); resetCopy(); stage.setAttribute('aria-busy', 'false'); },
+        dispose() { button.setAttribute('aria-pressed', 'false'); session.dispose(); resetCopy(); stage.setAttribute('aria-busy', 'false'); },
         reveal() { button.classList.add('in'); },
     };
 }
