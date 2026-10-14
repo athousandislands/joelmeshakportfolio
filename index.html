@@ -362,7 +362,11 @@
 
         <div id="mobile-mindmap-panel" aria-label="Mind Map">
             <div id="mobile-mindmap-stage" tabindex="0" role="group" aria-label="Interactive sphere of design references. Drag to rotate; press and hold to bring images forward. Arrow keys rotate; Space brings images forward.">
-                <div id="mobile-mindmap-loading" role="status" aria-live="polite">Loading...</div>
+                <div id="mobile-mindmap-loading" role="progressbar" aria-label="Loading Mind Map" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div class="mindmap-loading-track"><span id="mindmap-loading-fill"></span></div>
+                    <span id="mindmap-loading-number" aria-hidden="true">0%</span>
+                    <p id="mindmap-loading-copy"></p>
+                </div>
                 <div id="mobile-mindmap-error" hidden>
                     <p>The map couldn’t finish opening. Please try again.</p>
                     <button id="mobile-mindmap-retry" type="button" class="glass">Try again</button>
@@ -380,6 +384,7 @@
 
     <section id="gallery" class="page" role="tabpanel" aria-label="Gallery">
         <div id="gallery-welcome" class="gallery-prompt-text"></div>
+        <p id="gallery-swipe-hint" hidden>Swipe up</p>
 
         <div id="gallery-scroll">
             <div id="gallery-viewport"></div>

@@ -68,6 +68,7 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
             st.width = ws; st.height = hs;
         }
 
+        let imagesSettled = Promise.resolve();
         function loadAll() {
             /* frameW is set by layout(), which always runs before this — using
                the real measured width means this stays correct in both
@@ -79,6 +80,11 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
                 img.src = url;
                 if (i < 3 && img.decode) img.decode().catch(() => {});
             });
+            imagesSettled = Promise.all(imgs.map(img => new Promise(resolve => {
+                if (img.complete) return resolve();
+                const done = () => { img.removeEventListener('load', done); img.removeEventListener('error', done); resolve(); };
+                img.addEventListener('load', done, {once:true}); img.addEventListener('error', done, {once:true});
+            })));
         }
 
         const SWITCH_MS = 180;
@@ -266,7 +272,7 @@ export function createCarousel({ PROJECTS, CARDS, PROJECT_START, PROFILE_TAB, Ta
             el.scrollLeft = i * slideW;
         }
 
-        return { start, layout, enterSection, jumpTo, jumpToProject, reveal, interrupt };
+        return { start, whenImagesSettled: () => imagesSettled, layout, enterSection, jumpTo, jumpToProject, reveal, interrupt };
     })();
     return Carousel;
 }

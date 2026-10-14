@@ -1,5 +1,6 @@
 import { createMindMapDiscovery } from './mind-map-discovery.js';
 import { createMapSession } from './mind-map-controller.js';
+import { createMapLoading } from './map-loading.js';
 
 // Equal-weight dots: one centre with six evenly spaced around it.
 export function mindMapIcon() {
@@ -13,7 +14,12 @@ export function createMindMapUI({ reduced }) {
     const errorPanel = document.getElementById('mobile-mindmap-error');
     const intro = document.getElementById('mobile-mindmap-intro');
     const hint = document.getElementById('mobile-mindmap-hint');
-    let readyAt = 0, engaged = false;
+    const loader = createMapLoading({ root: loading, reduced,
+        track: document.getElementById('mindmap-loading-fill'),
+        number: document.getElementById('mindmap-loading-number'),
+        copy: document.getElementById('mindmap-loading-copy'),
+    });
+    let readyAt = 0, engaged = false, disposed = false;
     const timers = new Set();
     button.innerHTML = mindMapIcon();
     let discoveryStorage;
@@ -53,11 +59,14 @@ export function createMindMapUI({ reduced }) {
     }
     const session = createMapSession({
         load: () => import('./mind-map.js'),
-        create: (module, tileCount, report) => module.createMobileMap({ stage, loading, tileCount, reduced, onReady: ready, onEngage: engage,
+        create: (module, tileCount, report) => {
+            loader.reset(); if (session.active) loader.start();
+            return module.createMobileMap({ stage, loading, tileCount, reduced,
+            onReady() { loader.complete(); if (session.active) ready(); }, onEngage: engage, onProgress: loader.progress,
             onError: error => queueMicrotask(() => report(error)),
-        }),
+        }); },
         onLoading(count) {
-            resetCopy(); errorPanel.hidden = true; loading.style.opacity = '1'; loading.setAttribute('aria-hidden', 'false');
+            resetCopy(); errorPanel.hidden = true; loader.start();
             stage.dataset.state = 'loading'; stage.setAttribute('aria-busy', 'true');
             document.getElementById('mobile-mindmap-lite').hidden = count === 32;
         },
@@ -65,12 +74,12 @@ export function createMindMapUI({ reduced }) {
             resetCopy(); errorPanel.hidden = true;
             const complete = stage.dataset.ready === 'true';
             stage.setAttribute('aria-busy', String(!complete));
-            if (complete) ready();
+            if (complete) ready(); else loader.start();
         },
         onError: showError,
     });
     function showError(error) {
-        resetCopy(); loading.style.opacity = '0'; loading.setAttribute('aria-hidden', 'true');
+        resetCopy(); loader.reset(); loading.style.opacity = '0'; loading.setAttribute('aria-hidden', 'true');
         errorPanel.hidden = false; stage.dataset.state = 'error'; stage.setAttribute('aria-busy', 'false');
         console.info('[mobile mind map] Could not open:', error.message);
     }
@@ -81,9 +90,10 @@ export function createMindMapUI({ reduced }) {
     document.getElementById('mobile-mindmap-retry').addEventListener('click', () => session.enter());
     document.getElementById('mobile-mindmap-lite').addEventListener('click', () => session.enter(32));
     return {
+        prepare() { if (!disposed) session.prepare(); },
         enter() { button.setAttribute('aria-pressed', 'true'); session.enter(); },
-        leave() { button.setAttribute('aria-pressed', 'false'); session.leave(); resetCopy(); stage.setAttribute('aria-busy', 'false'); },
-        dispose() { discovery.stop(); button.setAttribute('aria-pressed', 'false'); session.dispose(); resetCopy(); stage.setAttribute('aria-busy', 'false'); },
+        leave() { loader.stop(); button.setAttribute('aria-pressed', 'false'); session.leave(); resetCopy(); stage.setAttribute('aria-busy', 'false'); },
+        dispose() { disposed = true; loader.reset(); discovery.stop(); button.setAttribute('aria-pressed', 'false'); session.dispose(); resetCopy(); stage.setAttribute('aria-busy', 'false'); },
         reveal() { button.classList.add('in'); discovery.enter(); },
         discover() { discovery.enter(); },
     };

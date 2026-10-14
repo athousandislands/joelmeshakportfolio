@@ -671,6 +671,13 @@ export function initMobile() {
 
         setTimeout(() => {
             Carousel.start();
+            Carousel.whenImagesSettled().then(() => {
+                const connection = navigator.connection;
+                if (connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType || '')) return;
+                const prepare = () => MindMap.prepare();
+                if ('requestIdleCallback' in window) requestIdleCallback(prepare, {timeout:2000});
+                else setTimeout(prepare, 300);
+            });
             /* Applies the same `arrive` class goto() sets on navigation — a fresh
                load never got it otherwise. Its homeRise transform (fill-mode:
                both) is what promotes #carousel to its own compositing layer,

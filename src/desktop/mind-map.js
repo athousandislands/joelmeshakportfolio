@@ -361,6 +361,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             if (tex) textures[k] = tex;
             else failedTiles.add(k);
             preparedCount += 1;
+            options.onProgress?.((preparedCount * 0.7 + uploadedCount * 0.3) / N);
             if (mounted) enqueueUpload(k);
             if (preparedCount >= N) logSummary();
         }
@@ -473,6 +474,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
                 uploadedCount += 1;
             }
             /* Everything accounted for (uploaded or failed) — show the globe. */
+            options.onProgress?.((preparedCount * 0.7 + uploadedCount * 0.3) / N);
             maybeReveal();
         }
 
@@ -559,7 +561,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
                     if (options.strictReady) options.onError?.(new Error('Mind Map preparation timed out.'));
                     else reveal(`timeout, ${uploadedCount}/${N} ready`);
                 }
-            }, REVEAL_HARD_TIMEOUT_MS);
+            }, options.loadingTimeout || REVEAL_HARD_TIMEOUT_MS);
         }
 
         function unmount() {
@@ -779,6 +781,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
                 ktx2Loader?.dispose();
             },
             prewarm,
+            prepareFrame: pumpUploads,
             pausePreparation: preparation.cancel,
             /* The scene-1 intent signal (folder centred/hovered) still calls this;
                it is now just an early nudge for the same background pipeline. */
