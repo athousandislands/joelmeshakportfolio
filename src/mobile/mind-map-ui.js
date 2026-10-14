@@ -20,8 +20,7 @@ export function createMindMapUI({ reduced }) {
     try { discoveryStorage = window.localStorage; } catch {}
     const discovery = createMindMapDiscovery({
         button, storage: discoveryStorage, reduced,
-        eligible: () => document.getElementById('mobile-root').dataset.page !== 'gallery'
-            && document.getElementById('home').dataset.section !== 'mindmap',
+        eligible: () => document.getElementById('mobile-root').dataset.page !== 'gallery',
     });
     function later(fn, ms) {
         const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms);

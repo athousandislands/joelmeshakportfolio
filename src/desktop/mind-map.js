@@ -668,6 +668,16 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             const massBreath = MASS_BREATH_MIN +
                 (MASS_BREATH_MAX - MASS_BREATH_MIN) * (breath * (0.45 + 0.55 * swell));
 
+            // Mobile-only hierarchy: nearest reference leads; neighboring cards
+            // retain their sway but use less outward travel. Desktop skips this.
+            let focusTile = null;
+            if (isHovering && options.focusPushScale) {
+                let nearest = Infinity;
+                for (const tile of tiles) {
+                    const distance = _hitPoint.distanceToSquared(tile.base);
+                    if (distance < nearest) { nearest = distance; focusTile = tile; }
+                }
+            }
             for (let i = 0; i < tiles.length; i++) {
                 const t = tiles[i];
                 let scaleTarget = 1.0;
@@ -697,7 +707,8 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
                     if (distance < effectRadius) {
                         pushed = true;
                         const force = Math.pow(1 - distance / effectRadius, 2);
-                        _push.copy(t.dir).multiplyScalar(force * maxPush);
+                        const hierarchy = focusTile ? (t === focusTile ? options.focusPushScale : options.neighborPushScale) : 1;
+                        _push.copy(t.dir).multiplyScalar(force * maxPush * hierarchy);
                         _target.add(_push);
 
                         const sway = 0.112 * force * (options.swayScale || 1);

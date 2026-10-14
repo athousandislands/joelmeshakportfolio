@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createPulseDiscovery} from '../src/desktop/pulse-discovery.js';
 function setup(storage, reduced = false) {
     const classes = new Set(), listeners = new Map();
-    const label = {classList:{add:k=>classes.add(k),remove:k=>classes.delete(k)},addEventListener:(k,fn)=>listeners.set(k,fn),removeEventListener:k=>listeners.delete(k)};
+    const label = {classList:{add:k=>classes.add(k),remove:k=>classes.delete(k),contains:k=>classes.has(k)},addEventListener:(k,fn)=>listeners.set(k,fn),removeEventListener:k=>listeners.delete(k)};
     return {cue:createPulseDiscovery({label,storage,reduced}),classes,listeners};
 }
 test('Pulse cue runs on only three entries, including entries in a later page session', () => {

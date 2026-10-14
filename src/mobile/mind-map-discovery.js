@@ -1,4 +1,4 @@
-const VISITS_KEY = 'portfolio-mobile-mindmap-discovery-visits';
+const VISITS_KEY = 'portfolio-mobile-mindmap-discovery-v2-visits';
 
 export function createMindMapDiscovery({ button, storage, reduced, eligible }) {
     let visits = 0;

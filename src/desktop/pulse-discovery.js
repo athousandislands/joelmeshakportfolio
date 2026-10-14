@@ -1,4 +1,4 @@
-const VISITS_KEY = 'portfolio-pulse-discovery-visits';
+const VISITS_KEY = 'portfolio-pulse-discovery-v2-visits';
 
 // Count scene entries, never mousemove reveals. Storage failure falls back to
 // the current page; the cue is purely visual and does not change Pulse state.
@@ -16,6 +16,7 @@ export function createPulseDiscovery({ label, storage, reduced }) {
             label.classList.add('pulse-discover');
             return true;
         },
+        active() { return label.classList.contains('pulse-discover'); },
         stop,
         dispose() { stop(); label.removeEventListener('animationend', stop); },
     };

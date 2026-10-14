@@ -13,7 +13,7 @@ test('mobile icon cue is limited to three Home entries across page sessions', ()
     const next = setup(storage); assert.equal(next.cue.enter(),true); assert.equal(next.cue.enter(),false);
     assert.equal(count,'3'); assert.equal(next.classes.size,0);
 });
-test('an open map and reduced motion do not consume icon cue entries', () => {
+test('Gallery and reduced motion do not consume icon cue entries', () => {
     let count = 0; const storage = {getItem:()=>count,setItem:(key,value)=>{count=Number(value);}};
     assert.equal(setup(storage,true).cue.enter(),false);
     assert.equal(setup(storage,false,()=>false).cue.enter(),false);

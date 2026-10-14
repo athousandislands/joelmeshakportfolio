@@ -118,28 +118,28 @@
 #pulse-toggle .pulse-label.pulse-discover {
     display: inline-block;
     transform-origin: center;
-    animation: pulseLabelRhythm 2.7s ease-in-out .5s 2;
+    animation: pulseLabelRhythm 2.8s ease-in-out .4s 4;
 }
 @keyframes pulseLabelRhythm {
     0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.03); }
+    50% { transform: scale(1.08); color: #fff; }
 }
 @media (prefers-reduced-motion: reduce) {
     #pulse-toggle .pulse-label.pulse-discover { animation: none; }
 }
 
-/* Six-fold symmetry makes a 120-degree finish visually identical to the
+/* Six-fold symmetry makes a 360-degree finish visually identical to the
    starting icon. Only the ring moves; the centre remains an anchor. */
 #mobile-root #nav-mindmap-btn .mindmap-orbit-dots {
     transform-box: view-box;
     transform-origin: 12px 12px;
 }
 #mobile-root #nav-mindmap-btn.mindmap-discover .mindmap-orbit-dots {
-    animation: mindMapIconOrbit 3.6s cubic-bezier(.45, 0, .3, 1) .55s 1;
+    animation: mindMapIconOrbit 3.2s cubic-bezier(.45, 0, .3, 1) .4s 3;
 }
 @keyframes mindMapIconOrbit {
     from { transform: rotate(0deg); }
-    to { transform: rotate(120deg); }
+    to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
     #mobile-root #nav-mindmap-btn.mindmap-discover .mindmap-orbit-dots { animation: none; }

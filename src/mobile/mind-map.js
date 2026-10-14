@@ -42,7 +42,7 @@ export function createMobileMap({ stage, loading, tileCount, reduced, onReady, o
         REDUCED_MOTION: reduced, gsap, clamp, mix: (a, b, t) => a + (b - a) * t,
     }, {
         container: stage, loading, tileCount, strictReady: true,
-        pushScale: 1.06, holdPushScale: 1.25, swayScale: 1.32, effectRadiusScale: 1.08,
+        pushScale: 1.06, holdPushScale: 1.25, focusPushScale: 1.03, neighborPushScale: 0.9, swayScale: 1.32, effectRadiusScale: 1.08,
         globeTilt: { x: 0, y: 0.21 }, polarRange: [0.35, Math.PI - 0.35], workerLimit: 2, fitRadius: 3.55, tileSize: 0.78 * Math.sqrt(76 / tileCount), quietReduced: true,
         powerPreference: 'default',
         frameCamera(camera, viewport) {

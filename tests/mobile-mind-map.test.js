@@ -71,12 +71,12 @@ function sceneSetup(t, count, fail = false, options = {}) {
     globalThis.fetch = async () => ({ ok: true });
     t.after(() => { globalThis.fetch = fetchBefore; });
     const requested = [], uploads = [], errors = [], renders = [];
-    let frame, controls, camera, ready = 0;
+    let frame, controls, camera, globe, ready = 0;
     class Renderer {
         constructor() { this.domElement = {style:{},parentNode:null}; this.capabilities = {getMaxAnisotropy:() => 1}; }
         setSize() {} setPixelRatio() {} dispose() {} getContext() { return {getExtension:() => null}; }
         initTexture(texture) { uploads.push(texture); }
-        render(scene, currentCamera) { camera = currentCamera; renders.push(scene.children[0].visible); }
+        render(scene, currentCamera) { camera = currentCamera; globe = scene.children[0]; scene.updateMatrixWorld(true); camera.updateMatrixWorld(true); renders.push(globe.visible); }
     }
     class Controls { constructor() { controls = this; this.minPolarAngle = 0; this.maxPolarAngle = Math.PI; this.touches = {}; this.mouseButtons = {}; } update() {} dispose() {} }
     class Loader {
@@ -93,7 +93,7 @@ function sceneSetup(t, count, fail = false, options = {}) {
         clamp:(v,a,b) => Math.max(a,Math.min(b,v)), mix:(a,b,t) => a+(b-a)*t,
     },{...options,container:element,loading:element,tileCount:count,strictReady:true,onReady:() => ready++,onError:e => errors.push(e)});
     t.after(() => scene.dispose());
-    return {scene,frame,requested,uploads,errors,renders,get controls(){return controls;},get camera(){return camera;},get ready(){return ready;}};
+    return {scene,frame,requested,uploads,errors,renders,get controls(){return controls;},get camera(){return camera;},get globe(){return globe;},get ready(){return ready;}};
 }
 for (const count of [76,55,32]) {
     test(`the ${count}-image map reveals only after every real tile is uploaded`, async t => {
@@ -125,3 +125,27 @@ for (const locked of [true,false]) {
         else assert.ok(Math.abs(view.camera.position.y) > 0.01);
     });
 }
+
+
+test('mobile focus gains 3% travel while neighboring travel drops 10%, with identical sway', async t => {
+    async function capture(options, engaged) {
+        const view = sceneSetup(t,55,false,{...options, quietReduced:true});
+        view.scene.mount(); await view.scene.prewarm({force:true});
+        for(let i=0;i<60;i++) view.frame(1/60,10);
+        if(engaged) { view.scene.setPointer(195,275); view.scene.setPointerDown(true); }
+        for(let i=0;i<300;i++) view.frame(1/60,10);
+        return view.globe.children.slice(1).map(mesh=>mesh.position.clone());
+    }
+    const idle = await capture({},false), before = await capture({},true);
+    const after = await capture({focusPushScale:1.03,neighborPushScale:0.9},true);
+    let leaders=0, neighbors=0;
+    for(let i=0;i<before.length;i++) {
+        const dir=idle[i].clone().normalize();
+        const previous=before[i].clone().sub(idle[i]).dot(dir);
+        const change=after[i].clone().sub(before[i]).dot(dir);
+        if(Math.abs(change)<1e-6) continue;
+        if(change>0) { leaders++; assert.ok(previous>0); }
+        else neighbors++;
+    }
+    assert.equal(leaders,1); assert.ok(neighbors>1);
+});
