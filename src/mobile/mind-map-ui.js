@@ -1,8 +1,8 @@
 import { createMapSession } from './mind-map-controller.js';
 
-// Four open, spaced dots: one centre and three forming a triangle around it.
+// Equal-weight dots: one centre with six evenly spaced around it.
 export function mindMapIcon() {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="12" cy="4.7" r="2"/><circle cx="4.8" cy="17.2" r="2"/><circle cx="19.2" cy="17.2" r="2"/><circle cx="12" cy="12.7" r="2"/></svg>';
+    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="4.6" r="2.1"/><circle cx="18.41" cy="8.3" r="2.1"/><circle cx="18.41" cy="15.7" r="2.1"/><circle cx="12" cy="19.4" r="2.1"/><circle cx="5.59" cy="15.7" r="2.1"/><circle cx="5.59" cy="8.3" r="2.1"/></svg>';
 }
 
 export function createMindMapUI({ reduced }) {

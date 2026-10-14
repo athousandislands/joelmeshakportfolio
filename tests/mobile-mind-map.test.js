@@ -57,9 +57,9 @@ test('a stale import failure after navigation does not replace the new screen wi
     const pending = session.enter(); session.leave(); load.reject(new Error('offline')); await pending;
     assert.deepEqual(events,[['loading',55]]);
 });
-test('Mind Map icon uses four spaced dots with inherited colour and no visible label', () => {
+test('Mind Map icon uses a centre dot and six surrounding dots with inherited colour and no visible label', () => {
     const svg = mindMapIcon(); assert.match(svg,/fill="currentColor"/); assert.doesNotMatch(svg,/<text/);
-    assert.equal((svg.match(/<circle /g)||[]).length, 4);
+    assert.equal((svg.match(/<circle /g)||[]).length, 7);
 });
 
 // Exercise the shared scene with real Three geometry and simulated texture/GPU
