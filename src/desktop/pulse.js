@@ -1,3 +1,4 @@
+import { createPulseDiscovery } from './pulse-discovery.js';
 import { createCameraSession, canAdvanceAlignment } from '../shared/camera-session.js';
 
 export function createPulse({ Scene3, Router, clamp }) {
@@ -14,6 +15,14 @@ export function createPulse({ Scene3, Router, clamp }) {
 
         const toggleEl = document.getElementById('pulse-toggle');
         const switchEl = toggleEl.querySelector('.pulse-switch');
+        let discoveryStorage;
+        try { discoveryStorage = window.localStorage; } catch {}
+        const discovery = createPulseDiscovery({
+            label: toggleEl.querySelector('.pulse-label'), storage: discoveryStorage,
+            reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+        });
+        toggleEl.addEventListener('pointerdown', discovery.stop, { passive: true });
+        toggleEl.addEventListener('focusin', discovery.stop);
         const noticeEl = document.getElementById('pulse-notice');
         const beginBtn = noticeEl.querySelector('.pulse-begin');
         const onboardEl = document.getElementById('pulse-onboard');
@@ -341,7 +350,7 @@ export function createPulse({ Scene3, Router, clamp }) {
         function revealToggle() {
             toggleEl.classList.add('visible');
             clearTimeout(toggleHideTimer);
-            if (!stickyVisible()) toggleHideTimer = setTimeout(() => toggleEl.classList.remove('visible'), 6000);
+            if (!stickyVisible()) toggleHideTimer = setTimeout(() => toggleEl.classList.remove('visible'), discovery.active() ? 12500 : 6000);
         }
         ['mousemove', 'wheel', 'pointerdown', 'keydown'].forEach(evt => {
             window.addEventListener(evt, () => { if (Router.scene === 3) revealToggle(); }, { passive: true });
@@ -539,12 +548,12 @@ export function createPulse({ Scene3, Router, clamp }) {
                resident in memory (see ensureModel's cache) so a later
                re-entry and re-activation is instant; only the camera stream
                and the per-frame loop actually stop. */
-            dispose() { disable(); modelGeneration++; modelLoading = null; handLandmarker?.close(); handLandmarker = null; },
-            disableForNavigation() { if (state !== OFF) disable(); },
+            dispose() { discovery.dispose(); toggleEl.removeEventListener('pointerdown', discovery.stop); toggleEl.removeEventListener('focusin', discovery.stop); disable(); modelGeneration++; modelLoading = null; handLandmarker?.close(); handLandmarker = null; },
+            disableForNavigation() { discovery.stop(); if (state !== OFF) disable(); },
             /* Called once by the routing section when the scene-3 entrance
                transition finishes, so the toggle becomes discoverable as soon
                as the page has settled. */
-            revealToggleOnce() { revealToggle(); },
+            revealToggleOnce() { discovery.enter(); revealToggle(); },
             /* Called by the mouse/touch handlers when an interaction attempt
                is blocked because Pulse currently has input suppressed. */
             notifyInputBlocked() { notifyInputBlocked(); }

@@ -247,6 +247,10 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             /* Whole-sphere flip: a single 180° roll keeps every tile upright
                without touching the Fibonacci placement. */
             globe.rotation.z = Math.PI;
+            if (options.globeTilt) {
+                globe.rotation.x = options.globeTilt.x;
+                globe.rotation.y = options.globeTilt.y;
+            }
             /* Hidden until every texture is uploaded. The user must never see
                placeholder tiles or images popping in one at a time. */
             globe.visible = false;
@@ -521,6 +525,11 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             controls.enablePan = false;
             controls.minDistance = 4;
             controls.maxDistance = 20;
+            if (options.lockPolar) {
+                controls.minPolarAngle = controls.maxPolarAngle = Math.PI / 2;
+            } else if (options.polarRange) {
+                [controls.minPolarAngle, controls.maxPolarAngle] = options.polarRange;
+            }
             /* Captured so both touch- and mouse-drag-rotate can be switched
                off and restored exactly while Pulse is live. */
             defaultTouches = Object.assign({}, controls.touches);
@@ -659,6 +668,16 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             const massBreath = MASS_BREATH_MIN +
                 (MASS_BREATH_MAX - MASS_BREATH_MIN) * (breath * (0.45 + 0.55 * swell));
 
+            // Mobile-only hierarchy: nearest reference leads; neighboring cards
+            // retain their sway but use less outward travel. Desktop skips this.
+            let focusTile = null;
+            if (isHovering && options.focusPushScale) {
+                let nearest = Infinity;
+                for (const tile of tiles) {
+                    const distance = _hitPoint.distanceToSquared(tile.base);
+                    if (distance < nearest) { nearest = distance; focusTile = tile; }
+                }
+            }
             for (let i = 0; i < tiles.length; i++) {
                 const t = tiles[i];
                 let scaleTarget = 1.0;
@@ -673,22 +692,26 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
 
                 if (isHovering) {
                     const distance = _hitPoint.distanceTo(t.base);
-                    const effectRadius = EFFECT_RADIUS_BASE + holdFactor * EFFECT_RADIUS_HOLD;
+                    const effectRadius = (EFFECT_RADIUS_BASE + holdFactor * EFFECT_RADIUS_HOLD) * (options.effectRadiusScale || 1);
                     /* Coefficients trimmed to 0.9373 of the original travel (both terms
                        move together so scaling holds at every holdFactor, not
                        just full extension). The ONE place push distance is
                        computed, so it reaches press-and-hold and Pulse
                        identically — `protrusion` carries the viewport
                        adaptation, not this. */
-                    const maxPush = (1.2935 + holdFactor * 2.9994) * protrusion;
+                    // Extra held travel fades in with the existing hold envelope. With
+                    // no mobile options, desktop uses its original amount exactly.
+                    const heldTravel = 1 + holdFactor * ((options.holdPushScale || 1) - 1);
+                    const maxPush = (1.2935 + holdFactor * 2.9994) * protrusion * (options.pushScale || 1) * heldTravel;
 
                     if (distance < effectRadius) {
                         pushed = true;
                         const force = Math.pow(1 - distance / effectRadius, 2);
-                        _push.copy(t.dir).multiplyScalar(force * maxPush);
+                        const hierarchy = focusTile ? (t === focusTile ? options.focusPushScale : options.neighborPushScale) : 1;
+                        _push.copy(t.dir).multiplyScalar(force * maxPush * hierarchy);
                         _target.add(_push);
 
-                        const sway = 0.112 * force;
+                        const sway = 0.112 * force * (options.swayScale || 1);
                         _target.x += Math.sin(time * 1.5 + t.phase) * sway;
                         _target.y += Math.cos(time * 1.2 + t.phase) * sway;
                         _target.z += Math.sin(time * 1.8 + t.phase) * sway;
@@ -733,7 +756,7 @@ export function createMindMap({ THREE, OrbitControls, KTX2Loader, V, renderer, G
             const offset = camera.position.clone();
             const spherical = new THREE.Spherical().setFromVector3(offset);
             spherical.theta += dAzimuth;
-            spherical.phi = clamp(spherical.phi + dPolar, 0.35, Math.PI - 0.35);
+            spherical.phi = options.lockPolar ? Math.PI / 2 : clamp(spherical.phi + dPolar, 0.35, Math.PI - 0.35);
             spherical.makeSafe();
             offset.setFromSpherical(spherical);
             camera.position.copy(offset);
